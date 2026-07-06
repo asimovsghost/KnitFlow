@@ -1,0 +1,1967 @@
+/**
+ * app.js
+ * Core controller for the KnitFlow progress tracking application.
+ * Manages database, state, rendering, user interactions, audio synthesis, and toolkits.
+ */
+// ----------------------------------------------------
+// 0. CUSTOM ELECTRON COMPATIBLE DIALOGS (Confirm & Prompt)
+// ----------------------------------------------------
+const Dialogs = {
+  confirm(message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.style.zIndex = '1000';
+      
+      overlay.innerHTML = `
+        <div class="modal-card" style="max-width: 400px; padding: 24px; text-align: center; border-radius: var(--radius-md);">
+          <h3 style="margin-bottom: 12px; font-family: var(--font-sans); font-weight: 600; font-size: 1.25rem;">Confirm Action</h3>
+          <p style="margin-bottom: 24px; font-size: 0.95rem; color: var(--color-text-muted); line-height: 1.5;">${message}</p>
+          <div style="display: flex; justify-content: center; gap: 12px;">
+            <button class="btn btn-secondary" id="confirm-cancel-btn">Cancel</button>
+            <button class="btn btn-primary" id="confirm-ok-btn" style="background-color: var(--color-danger); border-color: var(--color-danger); box-shadow: 0 4px 12px rgba(178,88,88,0.2);">Confirm</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      
+      overlay.querySelector('#confirm-cancel-btn').onclick = () => {
+        overlay.remove();
+        resolve(false);
+      };
+      
+      overlay.querySelector('#confirm-ok-btn').onclick = () => {
+        overlay.remove();
+        resolve(true);
+      };
+    });
+  },
+  
+  prompt(message, defaultValue = '') {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.style.zIndex = '1000';
+      
+      overlay.innerHTML = `
+        <div class="modal-card" style="max-width: 400px; padding: 24px; border-radius: var(--radius-md);">
+          <h3 style="margin-bottom: 12px; font-family: var(--font-sans); font-weight: 600; font-size: 1.25rem;">Input Required</h3>
+          <p style="margin-bottom: 12px; font-size: 0.95rem; color: var(--color-text-muted);">${message}</p>
+          <input type="text" id="prompt-input-field" value="${defaultValue}" style="width: 100%; margin-bottom: 20px; box-sizing: border-box;" autocomplete="off">
+          <div style="display: flex; justify-content: flex-end; gap: 12px;">
+            <button class="btn btn-secondary" id="prompt-cancel-btn">Cancel</button>
+            <button class="btn btn-primary" id="prompt-ok-btn">OK</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      const input = overlay.querySelector('#prompt-input-field');
+      input.focus();
+      input.select();
+      
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          overlay.remove();
+          resolve(input.value.trim());
+        }
+      };
+
+      overlay.querySelector('#prompt-cancel-btn').onclick = () => {
+        overlay.remove();
+        resolve(null);
+      };
+      
+      overlay.querySelector('#prompt-ok-btn').onclick = () => {
+        overlay.remove();
+        resolve(input.value.trim());
+      };
+    });
+  },
+
+  alert(message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.style.zIndex = '1000';
+      
+      overlay.innerHTML = `
+        <div class="modal-card" style="max-width: 400px; padding: 24px; text-align: center; border-radius: var(--radius-md);">
+          <h3 style="margin-bottom: 12px; font-family: var(--font-sans); font-weight: 600; font-size: 1.25rem;">Notification</h3>
+          <p style="margin-bottom: 24px; font-size: 0.95rem; color: var(--color-text-muted); line-height: 1.5;">${message}</p>
+          <div style="display: flex; justify-content: center;">
+            <button class="btn btn-primary" id="alert-ok-btn" style="width: 100px;">OK</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      
+      overlay.querySelector('#alert-ok-btn').onclick = () => {
+        overlay.remove();
+        resolve();
+      };
+    });
+  }
+};
+
+// ----------------------------------------------------
+// 1. INDEXEDDB MANAGER (LOCAL STORAGE OF IMAGES/PDFs)
+// ----------------------------------------------------
+const DBManager = {
+  dbName: 'KnitFlowDB',
+  dbVersion: 1,
+  db: null,
+
+  init() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, this.dbVersion);
+
+      request.onerror = (event) => {
+        console.error('Database error:', event.target.error);
+        reject(event.target.error);
+      };
+
+      request.onsuccess = (event) => {
+        this.db = event.target.result;
+        resolve();
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('projects')) {
+          db.createObjectStore('projects', { keyPath: 'id' });
+        }
+      };
+    });
+  },
+
+  getAllProjects() {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['projects'], 'readonly');
+      const store = transaction.objectStore('projects');
+      const request = store.getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  saveProject(project) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['projects'], 'readwrite');
+      const store = transaction.objectStore('projects');
+      const request = store.put(project);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  deleteProject(id) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['projects'], 'readwrite');
+      const store = transaction.objectStore('projects');
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+};
+
+// ----------------------------------------------------
+// 2. COZY AUDIO CLICK SYNTHESIZER (Web Audio API)
+// ----------------------------------------------------
+const AudioSynth = {
+  audioCtx: null,
+  soundEnabled: true,
+
+  init() {
+    // Lazy initialize on first interaction
+    if (!this.audioCtx) {
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+  },
+
+  playWoodClick() {
+    if (!this.soundEnabled) return;
+    this.init();
+    
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+
+    const now = this.audioCtx.currentTime;
+    
+    // Create nodes
+    const osc = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+    const filter = this.audioCtx.createBiquadFilter();
+
+    // Wood block configuration
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(110, now + 0.04);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, now);
+
+    // Fast wood tap volume envelope
+    gain.gain.setValueAtTime(0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+
+    // Connect nodes
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.audioCtx.destination);
+
+    // Play
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+};
+
+// ----------------------------------------------------
+// 3. STITCH DICTIONARY DATA
+// ----------------------------------------------------
+const STITCH_DICTIONARY = [
+  { name: 'Knit', abbr: 'k', desc: 'The basic foundational stitch of knitting. Insert right needle from front to back through loop, wrap yarn around, and pull through.', inst: 'Knit stitch (Stockinette: knit on RS, purl on WS).' },
+  { name: 'Purl', abbr: 'p', desc: 'The reverse of a knit stitch. Insert needle from back to front, wrap yarn over top, and push loop through to back.', inst: 'Purl stitch.' },
+  { name: 'Yarn Over', abbr: 'yo', desc: 'An increase stitch that creates an decorative open eyelet hole. Wrap yarn once completely around the right-hand needle before working the next stitch.', inst: 'Yo (Adds 1 stitch).' },
+  { name: 'Slip Slip Knit', abbr: 'ssk', desc: 'A left-leaning decrease stitch. Slip next 2 stitches knitwise one-at-a-time, insert left needle into front of these two loops, and knit them together.', inst: 'ssk (Decreases 1 stitch).' },
+  { name: 'Knit 2 Together', abbr: 'k2tog', desc: 'A right-leaning decrease stitch. Insert right needle through the next 2 stitches on left needle simultaneously, wrap yarn, and knit together.', inst: 'k2tog (Decreases 1 stitch).' },
+  { name: 'Slip 1, Knit 2 Together, Pass Slipped Stitch Over', abbr: 'sl1-k2tog-psso', desc: 'A double decrease stitch. Slip 1 stitch knitwise, knit next 2 stitches together, then lift the slipped stitch up and off the needle over the k2tog stitch.', inst: 'sl1-k2tog-psso (Decreases 2 stitches).' },
+  { name: '1/1 Right Cable', abbr: '1/1 RC', desc: 'A basic cable crossing. Slip next stitch to a cable needle and hold it in the back, knit 1 stitch from left needle, then knit the stitch from the cable needle.', inst: 'Slip 1 to cable needle at back, K1, K1 from cable needle.' },
+  { name: '1/1 Left Cable', abbr: '1/1 LC', desc: 'A basic cable crossing. Slip next stitch to a cable needle and hold it in the front, knit 1 stitch from left needle, then knit the stitch from the cable needle.', inst: 'Slip 1 to cable needle at front, K1, K1 from cable needle.' }
+];
+
+// ----------------------------------------------------
+// 4. MAIN APP STATE & CONTROLLER
+// ----------------------------------------------------
+const App = {
+  projects: [],
+  activeProject: null,
+  activeView: 'dashboard',
+  
+  // Render scaling & position tracking
+  zoomLevel: 100, // percentage
+  patternImage: null, // Holds HTMLImageElement if pattern is image
+  isDraggingTracker: false,
+  dragStartY: 0,
+  dragStartTrackerY: 0,
+
+  // Tool activation
+  isMagnifierActive: false,
+  isLineTrackerActive: false,
+  lastPageBeforeJump: null,
+
+  // Temporary file hold during creation
+  loadedFileData: null,
+  loadedFileName: '',
+  loadedFileType: '',
+
+  async init() {
+    this.cacheDOM();
+    this.bindEvents();
+    this.initTheme();
+    
+    // Initialize DB & load projects
+    try {
+      await DBManager.init();
+      await this.loadAllProjectsFromDB();
+    } catch (err) {
+      alert('Could not initialize local database. App will run in memory-only mode.');
+    }
+    
+    this.renderProjectsGrid();
+    this.renderStitchDictionary();
+  },
+
+  cacheDOM() {
+    this.dom = {
+      // Views
+      viewDashboard: document.getElementById('view-dashboard'),
+      viewWorkspace: document.getElementById('view-workspace'),
+      
+      // Global controls
+      btnThemeToggle: document.getElementById('btn-theme-toggle'),
+      themeSun: document.getElementById('theme-sun'),
+      themeMoon: document.getElementById('theme-moon'),
+      btnSoundToggle: document.getElementById('btn-sound-toggle'),
+      soundIconOn: document.getElementById('sound-icon-on'),
+      soundIconOff: document.getElementById('sound-icon-off'),
+      btnToolkit: document.getElementById('btn-toolkit'),
+
+      // Dashboard View
+      projectsGrid: document.getElementById('projects-grid'),
+      emptyState: document.getElementById('empty-state'),
+      btnCreateProject: document.getElementById('btn-create-project'),
+      btnQuickstart: document.getElementById('btn-quickstart'),
+      statActiveCount: document.getElementById('stat-active-count'),
+      statStitchCount: document.getElementById('stat-stitch-count'),
+      statCompletedCount: document.getElementById('stat-completed-count'),
+
+      // Workspace View
+      btnBackDashboard: document.getElementById('btn-back-dashboard'),
+      projTitle: document.getElementById('workspace-project-title'),
+      projCategory: document.getElementById('workspace-project-category'),
+      projPageMeta: document.getElementById('workspace-project-page'),
+      btnDeleteProject: document.getElementById('btn-delete-project'),
+      
+      // Sidebar counters
+      countRowValue: document.getElementById('count-row-value'),
+      btnRowMinus: document.getElementById('btn-row-minus'),
+      btnRowPlus: document.getElementById('btn-row-plus'),
+      btnResetRows: document.getElementById('btn-reset-rows'),
+      rowProgressFill: document.getElementById('row-progress-fill'),
+      rowProgressText: document.getElementById('row-progress-text'),
+      btnSetRowTarget: document.getElementById('btn-set-row-target'),
+      
+      countStitchValue: document.getElementById('count-stitch-value'),
+      btnStitchMinus: document.getElementById('btn-stitch-minus'),
+      btnStitchPlus: document.getElementById('btn-stitch-plus'),
+      btnResetStitches: document.getElementById('btn-reset-stitches'),
+      stitchPerRowText: document.getElementById('stitch-per-row-text'),
+
+      // Sub-counters
+      subcountersContainer: document.getElementById('subcounters-container'),
+      btnAddSubcounter: document.getElementById('btn-add-subcounter'),
+      bookmarksListContainer: document.getElementById('bookmarks-list-container'),
+
+      // Notes
+      notesLogContainer: document.getElementById('notes-log-container'),
+      btnAddSticky: document.getElementById('btn-add-sticky'),
+
+      // Viewport & Workspace Canvas
+      btnPrevPage: document.getElementById('btn-prev-page'),
+      btnNextPage: document.getElementById('btn-next-page'),
+      pageIndicator: document.getElementById('page-indicator'),
+      btnZoomOut: document.getElementById('btn-zoom-out'),
+      btnZoomIn: document.getElementById('btn-zoom-in'),
+      zoomValue: document.getElementById('zoom-value'),
+      btnToggleTrackerLine: document.getElementById('btn-toggle-tracker-line'),
+      btnToggleMagnifier: document.getElementById('btn-toggle-magnifier'),
+      btnBookmarkPage: document.getElementById('btn-bookmark-page'),
+      btnJumpBack: document.getElementById('btn-jump-back'),
+      btnRotatePage: document.getElementById('btn-rotate-page'),
+
+      interactiveContainer: document.getElementById('interactive-container'),
+      patternWrapper: document.getElementById('pattern-wrapper'),
+      patternCanvas: document.getElementById('pattern-canvas'),
+      annotationsOverlay: document.getElementById('annotations-overlay'),
+      rowTrackerLine: document.getElementById('row-tracker-line'),
+      trackerRowNum: document.getElementById('tracker-row-num'),
+      trackerBtnOpacity: document.getElementById('tracker-btn-opacity'),
+      trackerBtnColor: document.getElementById('tracker-btn-color'),
+      trackerBtnSize: document.getElementById('tracker-btn-size'),
+
+      magnifierGlass: document.getElementById('magnifier-glass'),
+      magnifierCanvas: document.getElementById('magnifier-canvas'),
+
+      // Project Modal
+      modalProject: document.getElementById('modal-project'),
+      projectForm: document.getElementById('project-form'),
+      btnCloseProjectModal: document.getElementById('btn-close-project-modal'),
+      btnCancelProject: document.getElementById('btn-cancel-project'),
+      patternFileInput: document.getElementById('pattern-file'),
+      uploadBox: document.getElementById('upload-box'),
+      fileSelectedIndicator: document.getElementById('file-selected-indicator'),
+      selectedFileName: document.getElementById('selected-file-name'),
+      btnClearFile: document.getElementById('btn-clear-file'),
+      btnBrowseFile: document.getElementById('btn-browse-file'),
+
+      // Toolkit Drawer
+      toolkitDrawer: document.getElementById('toolkit-drawer'),
+      btnCloseToolkit: document.getElementById('btn-close-toolkit'),
+      tabBtnGauge: document.getElementById('tab-btn-gauge'),
+      tabBtnDictionary: document.getElementById('tab-btn-dictionary'),
+      tabBtnBackup: document.getElementById('tab-btn-backup'),
+      tabContentGauge: document.getElementById('tab-content-gauge'),
+      tabContentDictionary: document.getElementById('tab-content-dictionary'),
+      tabContentBackup: document.getElementById('tab-content-backup'),
+      btnExportBackup: document.getElementById('btn-export-backup'),
+      btnImportBackup: document.getElementById('btn-import-backup'),
+      backupFileInput: document.getElementById('backup-file-input'),
+      
+      // Gauge Calc
+      gaugeSwatchSts: document.getElementById('gauge-swatch-sts'),
+      gaugeSwatchW: document.getElementById('gauge-swatch-w'),
+      gaugeSwatchRows: document.getElementById('gauge-swatch-rows'),
+      gaugeSwatchH: document.getElementById('gauge-swatch-h'),
+      gaugeTargetW: document.getElementById('gauge-target-w'),
+      gaugeTargetH: document.getElementById('gauge-target-h'),
+      btnCalculateGauge: document.getElementById('btn-calculate-gauge'),
+      gaugeResults: document.getElementById('gauge-results'),
+      resCastOn: document.getElementById('res-cast-on'),
+      resTotalRows: document.getElementById('res-total-rows'),
+
+      // Stitch Dictionary
+      stitchSearch: document.getElementById('stitch-search'),
+      stitchList: document.getElementById('stitch-list')
+    };
+  },
+
+  bindEvents() {
+    // Theme Toggle
+    this.dom.btnThemeToggle.addEventListener('click', () => this.toggleTheme());
+    
+    // Sound Toggle
+    this.dom.btnSoundToggle.addEventListener('click', () => this.toggleSound());
+
+    // Project Modals
+    this.dom.btnCreateProject.addEventListener('click', () => this.showProjectModal(true));
+    this.dom.btnCancelProject.addEventListener('click', () => this.showProjectModal(false));
+    this.dom.btnCloseProjectModal.addEventListener('click', () => this.showProjectModal(false));
+    this.dom.projectForm.addEventListener('submit', (e) => this.handleProjectSubmit(e));
+    
+    // Pattern Source Radio toggle styling
+    const sourceRadios = this.dom.projectForm.querySelectorAll('input[name="pattern-source"]');
+    sourceRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const uploadSection = document.getElementById('file-upload-section');
+        const cards = this.dom.projectForm.querySelectorAll('.source-card');
+        cards.forEach(c => c.classList.remove('active-source'));
+        
+        radio.closest('.source-card').classList.add('active-source');
+        
+        if (e.target.value === 'upload') {
+          uploadSection.classList.remove('hidden');
+          this.dom.patternFileInput.required = !this.loadedFileData;
+        } else {
+          uploadSection.classList.add('hidden');
+          this.dom.patternFileInput.required = false;
+        }
+      });
+    });
+
+    // File Drag & Drop
+    const uploadBox = this.dom.uploadBox;
+    uploadBox.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadBox.style.borderColor = 'var(--color-accent)';
+    });
+    uploadBox.addEventListener('dragleave', () => {
+      uploadBox.style.borderColor = 'var(--color-border)';
+    });
+    uploadBox.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadBox.style.borderColor = 'var(--color-border)';
+      if (e.dataTransfer.files.length > 0) {
+        this.processPatternFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    this.dom.btnBrowseFile.addEventListener('click', () => this.dom.patternFileInput.click());
+    this.dom.patternFileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        this.processPatternFile(e.target.files[0]);
+      }
+    });
+    this.dom.btnClearFile.addEventListener('click', () => this.clearLoadedFile());
+
+    // Load Quickstart Sample
+    this.dom.btnQuickstart.addEventListener('click', () => this.loadQuickstartSample());
+
+    // Navigation Back to Dashboard
+    this.dom.btnBackDashboard.addEventListener('click', () => this.exitWorkspace());
+
+    // Row counters
+    this.dom.btnRowPlus.addEventListener('click', () => this.adjustRow(1));
+    this.dom.btnRowMinus.addEventListener('click', () => this.adjustRow(-1));
+    this.dom.btnResetRows.addEventListener('click', async () => {
+      const ok = await Dialogs.confirm('Reset row counter back to Row 1?');
+      if (ok) this.setRow(1);
+    });
+    this.dom.btnSetRowTarget.addEventListener('click', () => this.promptNewRowTarget());
+
+    // Stitch counters
+    this.dom.btnStitchPlus.addEventListener('click', () => this.adjustStitch(1));
+    this.dom.btnStitchMinus.addEventListener('click', () => this.adjustStitch(-1));
+    this.dom.btnResetStitches.addEventListener('click', () => this.setStitch(0));
+
+    // Sub-counters addition
+    this.dom.btnAddSubcounter.addEventListener('click', () => this.promptCreateSubcounter());
+
+    // Delete Project
+    this.dom.btnDeleteProject.addEventListener('click', () => this.deleteActiveProject());
+
+
+
+    // Bookmarks and Rotation
+    this.dom.btnBookmarkPage.addEventListener('click', () => this.toggleBookmark());
+    this.dom.btnJumpBack.addEventListener('click', () => this.jumpBack());
+    this.dom.btnRotatePage.addEventListener('click', () => this.rotatePage());
+
+    // Toolbar viewport controls
+    this.dom.btnPrevPage.addEventListener('click', () => this.changePage(-1));
+    this.dom.btnNextPage.addEventListener('click', () => this.changePage(1));
+    this.dom.btnZoomIn.addEventListener('click', () => this.adjustZoom(10));
+    this.dom.btnZoomOut.addEventListener('click', () => this.adjustZoom(-10));
+
+    // Tracker & Magnifier switches
+    this.dom.btnToggleTrackerLine.addEventListener('click', () => this.toggleTrackerLineTool());
+    this.dom.btnToggleMagnifier.addEventListener('click', () => this.toggleMagnifierTool());
+
+    // Drag-and-drop tracker line logic
+    const line = this.dom.rowTrackerLine;
+    line.addEventListener('mousedown', (e) => this.startDraggingTracker(e));
+    line.addEventListener('touchstart', (e) => this.startDraggingTracker(e), { passive: true });
+    
+    document.addEventListener('mousemove', (e) => this.dragTracker(e));
+    document.addEventListener('touchmove', (e) => this.dragTracker(e));
+    document.addEventListener('mouseup', () => this.stopDraggingTracker());
+    document.addEventListener('touchend', () => this.stopDraggingTracker());
+
+    // Interactive sticky note placement on double click
+    this.dom.patternCanvas.addEventListener('dblclick', (e) => this.handleCanvasDoubleClick(e));
+    this.dom.annotationsOverlay.addEventListener('dblclick', (e) => this.handleCanvasDoubleClick(e));
+
+    // Toolbar settings within tracker line
+    this.dom.trackerBtnOpacity.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.activeProject.trackerOpacityLow = !this.activeProject.trackerOpacityLow;
+      this.renderTrackerLine();
+      this.saveActiveProjectState();
+    });
+    this.dom.trackerBtnColor.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const colors = ['#c36d53', '#748a7b', '#4a90e2', '#e2b13c', '#9b51e0'];
+      let idx = colors.indexOf(this.activeProject.trackerColor || '#c36d53');
+      idx = (idx + 1) % colors.length;
+      this.activeProject.trackerColor = colors[idx];
+      this.renderTrackerLine();
+      this.saveActiveProjectState();
+    });
+    this.dom.trackerBtnSize.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sizes = [2, 4, 8, 12];
+      let idx = sizes.indexOf(this.activeProject.trackerSize || 4);
+      idx = (idx + 1) % sizes.length;
+      this.activeProject.trackerSize = sizes[idx];
+      this.renderTrackerLine();
+      this.saveActiveProjectState();
+    });
+
+    // Toolkit Drawer Actions
+    this.dom.btnToolkit.addEventListener('click', () => this.toggleToolkitDrawer(true));
+    this.dom.btnCloseToolkit.addEventListener('click', () => this.toggleToolkitDrawer(false));
+    
+    // Tab toggles in toolkit
+    this.dom.tabBtnGauge.addEventListener('click', () => this.switchToolkitTab('gauge'));
+    this.dom.tabBtnDictionary.addEventListener('click', () => this.switchToolkitTab('dictionary'));
+    this.dom.tabBtnBackup.addEventListener('click', () => this.switchToolkitTab('backup'));
+    
+    // Gauge Calc triggers
+    this.dom.btnCalculateGauge.addEventListener('click', () => this.runGaugeCalculation());
+
+    // Backup actions
+    this.dom.btnExportBackup.addEventListener('click', () => this.exportBackup());
+    this.dom.btnImportBackup.addEventListener('click', () => this.dom.backupFileInput.click());
+    this.dom.backupFileInput.addEventListener('change', (e) => this.importBackup(e));
+    
+    // Stitch dictionary search filter
+    this.dom.stitchSearch.addEventListener('input', () => this.renderStitchDictionary());
+
+    // Keyboard Shortcuts Listener
+    document.addEventListener('keydown', (e) => this.handleKeyboardShortcuts(e));
+
+    // Chart magnifier glass tracker
+    this.dom.patternWrapper.addEventListener('mousemove', (e) => this.updateMagnifierGlass(e));
+    this.dom.patternWrapper.addEventListener('mouseleave', () => {
+      if (this.isMagnifierActive) {
+        this.dom.magnifierGlass.classList.add('hidden');
+      }
+    });
+
+    // Notes quick action
+    this.dom.btnAddSticky.addEventListener('click', () => {
+      this.placeStickyNoteAtCenter();
+    });
+  },
+
+  // ----------------------------------------------------
+  // THEME & SOUND CONTROLS
+  // ----------------------------------------------------
+  initTheme() {
+    const savedTheme = localStorage.getItem('knitflow-theme');
+    const isDark = (savedTheme === 'dark');
+    document.body.classList.toggle('dark-mode', isDark);
+    document.body.classList.toggle('light-mode', !isDark);
+    
+    this.dom.themeSun.classList.toggle('hidden', isDark);
+    this.dom.themeMoon.classList.toggle('hidden', !isDark);
+  },
+
+  toggleTheme() {
+    const isDark = document.body.classList.toggle('dark-mode');
+    document.body.classList.toggle('light-mode', !isDark);
+    
+    this.dom.themeSun.classList.toggle('hidden', isDark);
+    this.dom.themeMoon.classList.toggle('hidden', !isDark);
+    
+    localStorage.setItem('knitflow-theme', isDark ? 'dark' : 'light');
+  },
+
+  toggleSound() {
+    AudioSynth.soundEnabled = !AudioSynth.soundEnabled;
+    this.dom.soundIconOn.classList.toggle('hidden', !AudioSynth.soundEnabled);
+    this.dom.soundIconOff.classList.toggle('hidden', AudioSynth.soundEnabled);
+  },
+
+  // ----------------------------------------------------
+  // PROJECT LOADING & DB HANDLERS
+  // ----------------------------------------------------
+  async loadAllProjectsFromDB() {
+    this.projects = await DBManager.getAllProjects();
+    this.updateDashboardStats();
+  },
+
+  updateDashboardStats() {
+    this.dom.statActiveCount.innerText = this.projects.length.toString();
+    
+    let totalStitches = 0;
+    let completedCount = 0;
+    this.projects.forEach(p => {
+      totalStitches += p.currentStitch;
+      if (p.currentRow >= p.targetRows) {
+        completedCount++;
+      }
+    });
+
+    this.dom.statStitchCount.innerText = totalStitches.toLocaleString();
+    this.dom.statCompletedCount.innerText = completedCount.toString();
+  },
+
+  renderProjectsGrid() {
+    this.dom.projectsGrid.innerHTML = '';
+    
+    if (this.projects.length === 0) {
+      this.dom.emptyState.classList.remove('hidden');
+      return;
+    }
+    
+    this.dom.emptyState.classList.add('hidden');
+
+    this.projects.forEach(project => {
+      const card = document.createElement('div');
+      card.className = 'project-card';
+      card.dataset.id = project.id;
+      
+      const pct = Math.round((project.currentRow / project.targetRows) * 100);
+
+      // Fetch or generate thumbnail preview
+      let previewHTML = '';
+      if (project.thumbnail) {
+        previewHTML = `<img src="${project.thumbnail}" alt="${project.title}">`;
+      } else if (project.patternType === 'sample') {
+        previewHTML = `<div class="project-card-icon-placeholder">
+          <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>`;
+      } else {
+        // PDF or uploaded image placeholder or preview if image
+        if (project.patternFileType && project.patternFileType.startsWith('image/')) {
+          previewHTML = `<img src="${project.patternFile}" alt="${project.title}">`;
+        } else {
+          previewHTML = `<div class="project-card-icon-placeholder">
+            <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+          </div>`;
+        }
+      }
+
+      card.innerHTML = `
+        <div class="project-card-preview">
+          ${previewHTML}
+          <div class="project-card-badge">${project.category}</div>
+        </div>
+        <div class="project-card-info">
+          <h4 class="project-card-title">${project.title}</h4>
+          <div class="project-card-progressbar">
+            <div class="project-card-progressfill" style="width: ${Math.min(pct, 100)}%"></div>
+          </div>
+          <div class="project-card-progress">
+            <span class="progress-text-label">Row ${project.currentRow} of ${project.targetRows}</span>
+            <span class="progress-text-percent">${pct}%</span>
+          </div>
+        </div>
+        <div class="project-card-footer">
+          <span>Stitches: ${project.currentStitch}</span>
+          <span>Last active: ${new Date(project.lastActive).toLocaleDateString()}</span>
+        </div>
+      `;
+
+      card.addEventListener('click', () => this.enterWorkspace(project.id));
+      this.dom.projectsGrid.appendChild(card);
+    });
+  },
+
+  // ----------------------------------------------------
+  // WORKSPACE NAVIGATION & TIMER
+  // ----------------------------------------------------
+  async enterWorkspace(projectId) {
+    this.activeProject = this.projects.find(p => p.id === projectId);
+    if (!this.activeProject) return;
+
+    // Transition view
+    this.dom.viewDashboard.classList.remove('active');
+    this.dom.viewWorkspace.classList.add('active');
+    this.activeView = 'workspace';
+
+    // Set side panel values
+    this.dom.projTitle.innerText = this.activeProject.title;
+    this.dom.projCategory.innerText = this.activeProject.category;
+
+    // Reset view variables
+    this.zoomLevel = 100;
+    this.dom.zoomValue.innerText = '100%';
+    this.isMagnifierActive = false;
+    this.dom.btnToggleMagnifier.classList.remove('active-toggle');
+    this.dom.magnifierGlass.classList.add('hidden');
+
+    this.isLineTrackerActive = false;
+    this.dom.btnToggleTrackerLine.classList.remove('active-toggle');
+    this.dom.rowTrackerLine.classList.add('hidden');
+
+    // Restore counters values
+    this.updateCounterUI();
+    this.renderSubcounters();
+    this.renderNotesLog();
+
+    // Restore bookmarks states
+    this.lastPageBeforeJump = null;
+    this.updateJumpBackButtonUI();
+    this.updateBookmarkButtonUI();
+    this.renderBookmarks();
+    // Render pattern page
+    await this.loadAndRenderPattern();
+  },
+
+  exitWorkspace(skipSave = false) {
+    // Save state on leave
+    if (this.activeProject && !skipSave) {
+      this.activeProject.lastActive = new Date().toISOString();
+      DBManager.saveProject(this.activeProject);
+    }
+    
+    this.activeProject = null;
+    this.dom.viewWorkspace.classList.remove('active');
+    this.dom.viewDashboard.classList.add('active');
+    this.activeView = 'dashboard';
+    
+    this.loadAllProjectsFromDB().then(() => {
+      this.renderProjectsGrid();
+    });
+  },
+
+  async deleteActiveProject() {
+    if (!this.activeProject) return;
+    const ok = await Dialogs.confirm(`Are you sure you want to permanently delete the project "${this.activeProject.title}"?`);
+    if (ok) {
+      const id = this.activeProject.id;
+      await DBManager.deleteProject(id);
+      this.exitWorkspace(true);
+    }
+  },
+
+  saveActiveProjectState() {
+    if (this.activeProject) {
+      this.activeProject.lastActive = new Date().toISOString();
+      DBManager.saveProject(this.activeProject);
+    }
+  },
+
+  // ----------------------------------------------------
+  // PATTERN RENDERING INTERACTIVE CANVAS
+  // ----------------------------------------------------
+  async loadAndRenderPattern() {
+    const canvas = this.dom.patternCanvas;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    const rotations = this.activeProject.pageRotations || {};
+    const rotation = rotations[pageNum] || 0;
+    
+    if (this.activeProject.patternType === 'sample') {
+      // Draw pre-made sample pattern
+      const sampleCanvas = SamplePattern.createMockPatternCanvas();
+      this.drawRotatedCanvas(sampleCanvas, canvas, rotation);
+
+      this.activeProject.totalPages = 1;
+      this.activeProject.currentPageNum = 1;
+      this.dom.pageIndicator.innerText = `Page 1 / 1`;
+      this.dom.projPageMeta.innerText = `Page 1/1`;
+      this.dom.btnPrevPage.disabled = true;
+      this.dom.btnNextPage.disabled = true;
+
+      this.onPatternRenderComplete();
+    } else {
+      // PDF or Image upload
+      const fileData = this.activeProject.patternFile;
+      const fileType = this.activeProject.patternFileType;
+
+      if (fileType && fileType.startsWith('image/')) {
+        // Render image onto canvas
+        this.patternImage = new Image();
+        this.patternImage.src = fileData;
+        this.patternImage.onload = () => {
+          this.drawRotatedCanvas(this.patternImage, canvas, rotation);
+
+          this.activeProject.totalPages = 1;
+          this.activeProject.currentPageNum = 1;
+          this.dom.pageIndicator.innerText = `Page 1 / 1`;
+          this.dom.projPageMeta.innerText = `Page 1/1`;
+          this.dom.btnPrevPage.disabled = true;
+          this.dom.btnNextPage.disabled = true;
+          this.onPatternRenderComplete();
+        };
+      } else if (fileType === 'application/pdf') {
+        // Convert Base64 array string back to buffer
+        const binaryString = atob(fileData.split(',')[1]);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        try {
+          await PdfViewer.loadPdf(bytes.buffer);
+          this.activeProject.totalPages = PdfViewer.totalPages;
+          if (!this.activeProject.currentPageNum) this.activeProject.currentPageNum = 1;
+          
+          this.renderPdfPage();
+        } catch (err) {
+          alert('Could not render PDF: ' + err.message);
+        }
+      }
+    }
+  },
+
+  async renderPdfPage() {
+    const canvas = this.dom.patternCanvas;
+    const pageNum = this.activeProject.currentPageNum;
+    const rotations = this.activeProject.pageRotations || {};
+    const rotation = rotations[pageNum] || 0;
+
+    this.dom.pageIndicator.innerText = `Loading...`;
+    const renderInfo = await PdfViewer.renderPage(pageNum, canvas, rotation);
+    
+    if (renderInfo) {
+      this.dom.pageIndicator.innerText = `Page ${pageNum} / ${renderInfo.totalPages}`;
+      this.dom.projPageMeta.innerText = `Page ${pageNum}/${renderInfo.totalPages}`;
+      this.dom.btnPrevPage.disabled = pageNum <= 1;
+      this.dom.btnNextPage.disabled = pageNum >= renderInfo.totalPages;
+
+      this.onPatternRenderComplete();
+    }
+  },
+
+  onPatternRenderComplete() {
+    // Canvas sizing scaling
+    this.updateCanvasDisplaySize();
+    
+    // Position the row tracker and notes
+    this.renderTrackerLine();
+    this.renderNotesOnOverlay();
+  },
+
+  updateCanvasDisplaySize() {
+    const canvas = this.dom.patternCanvas;
+    const width = canvas.width * (this.zoomLevel / 100);
+    this.dom.patternWrapper.style.width = `${width}px`;
+  },
+
+  async changePage(dir) {
+    if (!this.activeProject || this.activeProject.patternType === 'sample') return;
+    
+    const targetPage = this.activeProject.currentPageNum + dir;
+    if (targetPage >= 1 && targetPage <= this.activeProject.totalPages) {
+      this.activeProject.currentPageNum = targetPage;
+      this.saveActiveProjectState();
+      await this.renderPdfPage();
+    }
+  },
+
+  adjustZoom(amount) {
+    this.zoomLevel = Math.max(50, Math.min(250, this.zoomLevel + amount));
+    this.dom.zoomValue.innerText = `${this.zoomLevel}%`;
+    this.updateCanvasDisplaySize();
+    
+    // Notes and tracker will naturally scale due to absolute position sizing percents,
+    // but re-rendering keeps coordinates crisp.
+    this.renderTrackerLine();
+    this.renderNotesOnOverlay();
+  },
+
+  // ----------------------------------------------------
+  // DYNAMIC ROW HIGHLIGHTER LINE TRACKER
+  // ----------------------------------------------------
+  renderTrackerLine() {
+    const tracker = this.dom.rowTrackerLine;
+    if (!this.isLineTrackerActive || !this.activeProject) {
+      tracker.classList.add('hidden');
+      return;
+    }
+    tracker.classList.remove('hidden');
+
+    const wrapperHeight = this.dom.patternWrapper.offsetHeight;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    
+    // Read Y offset as percentage of height, defaults to 20%
+    if (!this.activeProject.trackerY) this.activeProject.trackerY = {};
+    if (this.activeProject.trackerY[pageNum] === undefined) {
+      this.activeProject.trackerY[pageNum] = 20; // 20% down page
+    }
+
+    const yPct = this.activeProject.trackerY[pageNum];
+    tracker.style.top = `${yPct}%`;
+
+    // Apply active project visual choices
+    const color = this.activeProject.trackerColor || '#c36d53';
+    const size = this.activeProject.trackerSize || 4;
+    const lowOpacity = this.activeProject.trackerOpacityLow || false;
+
+    tracker.style.backgroundColor = color;
+    tracker.style.height = `${size}px`;
+    tracker.style.boxShadow = `0 0 10px ${color}80`;
+
+    // Overlay colors
+    const colorDot = this.dom.trackerBtnColor.querySelector('.color-dot');
+    colorDot.style.backgroundColor = color;
+
+    // Apply low opacity style
+    tracker.classList.toggle('low-opacity', lowOpacity);
+
+    // Update row label inside tracker
+    this.dom.trackerRowNum.innerText = this.activeProject.currentRow.toString();
+  },
+
+  startDraggingTracker(e) {
+    e.preventDefault();
+    this.isDraggingTracker = true;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    this.dragStartY = clientY;
+    
+    const pageNum = this.activeProject.currentPageNum || 1;
+    const wrapperHeight = this.dom.patternWrapper.offsetHeight;
+    const currentYPercent = this.activeProject.trackerY[pageNum] || 20;
+    
+    // Convert percent to pixels
+    this.dragStartTrackerY = (currentYPercent / 100) * wrapperHeight;
+    this.dom.rowTrackerLine.style.cursor = 'grabbing';
+  },
+
+  dragTracker(e) {
+    if (!this.isDraggingTracker) return;
+    
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const deltaY = clientY - this.dragStartY;
+    
+    const wrapperHeight = this.dom.patternWrapper.offsetHeight;
+    const newY = Math.max(0, Math.min(wrapperHeight, this.dragStartTrackerY + deltaY));
+    
+    const pageNum = this.activeProject.currentPageNum || 1;
+    const yPct = (newY / wrapperHeight) * 100;
+    
+    this.activeProject.trackerY[pageNum] = yPct;
+    this.dom.rowTrackerLine.style.top = `${yPct}%`;
+  },
+
+  stopDraggingTracker() {
+    if (this.isDraggingTracker) {
+      this.isDraggingTracker = false;
+      this.dom.rowTrackerLine.style.cursor = 'grab';
+      this.saveActiveProjectState();
+    }
+  },
+
+  nudgeTracker(dir) {
+    if (!this.activeProject) return;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    const currentY = this.activeProject.trackerY[pageNum] || 20;
+    
+    // Nudge up/down by 0.5% (approx 5 pixels)
+    const newY = Math.max(0, Math.min(100, currentY + dir * 0.6));
+    this.activeProject.trackerY[pageNum] = newY;
+    this.renderTrackerLine();
+    this.saveActiveProjectState();
+  },
+
+  toggleTrackerLineTool() {
+    this.isLineTrackerActive = !this.isLineTrackerActive;
+    this.dom.btnToggleTrackerLine.classList.toggle('active-toggle', this.isLineTrackerActive);
+    this.renderTrackerLine();
+  },
+
+  // ----------------------------------------------------
+  // CHART MAGNIFIER GLASS
+  // ----------------------------------------------------
+  toggleMagnifierTool() {
+    this.isMagnifierActive = !this.isMagnifierActive;
+    this.dom.btnToggleMagnifier.classList.toggle('active-toggle', this.isMagnifierActive);
+    this.dom.magnifierGlass.classList.add('hidden');
+  },
+
+  updateMagnifierGlass(e) {
+    if (!this.isMagnifierActive) return;
+    
+    const glass = this.dom.magnifierGlass;
+    const mCanvas = this.dom.magnifierCanvas;
+    const pCanvas = this.dom.patternCanvas;
+    const wrapper = this.dom.patternWrapper;
+
+    glass.classList.remove('hidden');
+
+    // Get mouse coordinates relative to canvas wrapper
+    const rect = wrapper.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Position the glass center at mouse cursor
+    glass.style.left = `${x - 75}px`;
+    glass.style.top = `${y - 75}px`;
+
+    // Map wrapper coordinate space back to the underlying high-res source canvas coordinates
+    const scaleX = pCanvas.width / wrapper.offsetWidth;
+    const scaleY = pCanvas.height / wrapper.offsetHeight;
+    
+    const sourceX = x * scaleX;
+    const sourceY = y * scaleY;
+
+    // Magnifier configuration
+    const zoom = 2; // 2x magnification
+    const size = 150; // glass diameter
+    
+    mCanvas.width = size;
+    mCanvas.height = size;
+    const mCtx = mCanvas.getContext('2d');
+
+    // Crop from pattern canvas and draw zoomed on magnifier canvas
+    mCtx.save();
+    // Circular crop
+    mCtx.beginPath();
+    mCtx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
+    mCtx.clip();
+    
+    mCtx.fillStyle = '#fff';
+    mCtx.fillRect(0, 0, size, size);
+
+    // Draw segment
+    const sWidth = (size / zoom);
+    const sHeight = (size / zoom);
+    
+    mCtx.drawImage(
+      pCanvas,
+      sourceX - sWidth/2,
+      sourceY - sHeight/2,
+      sWidth,
+      sHeight,
+      0,
+      0,
+      size,
+      size
+    );
+
+    // Draw subtle grid overlay inside magnifier for pattern readability
+    mCtx.strokeStyle = 'rgba(0,0,0,0.06)';
+    mCtx.lineWidth = 1;
+    for (let lx = 0; lx < size; lx += 15) {
+      mCtx.beginPath();
+      mCtx.moveTo(lx, 0);
+      mCtx.lineTo(lx, size);
+      mCtx.stroke();
+    }
+    for (let ly = 0; ly < size; ly += 15) {
+      mCtx.beginPath();
+      mCtx.moveTo(0, ly);
+      mCtx.lineTo(size, ly);
+      mCtx.stroke();
+    }
+
+    mCtx.restore();
+  },
+
+  // ----------------------------------------------------
+  // INTERACTIVE STICKY NOTES & ANNOTATIONS
+  // ----------------------------------------------------
+  renderNotesOnOverlay() {
+    const overlay = this.dom.annotationsOverlay;
+    overlay.innerHTML = '';
+    
+    if (!this.activeProject || !this.activeProject.notes) return;
+    
+    const currentPage = this.activeProject.currentPageNum || 1;
+    const pageNotes = this.activeProject.notes.filter(n => n.page === currentPage);
+    
+    pageNotes.forEach(note => {
+      const pin = document.createElement('div');
+      pin.className = 'sticky-note-pin';
+      pin.style.left = `${note.x}%`;
+      pin.style.top = `${note.y}%`;
+      pin.dataset.id = note.id;
+
+      pin.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openStickyNoteEditor(note, pin);
+      });
+
+      overlay.appendChild(pin);
+    });
+  },
+
+  handleCanvasDoubleClick(e) {
+    e.preventDefault();
+    if (!this.activeProject) return;
+
+    const wrapper = this.dom.patternWrapper;
+    const rect = wrapper.getBoundingClientRect();
+    const xPx = e.clientX - rect.left;
+    const yPx = e.clientY - rect.top;
+
+    // Convert to percentage
+    const xPct = (xPx / wrapper.offsetWidth) * 100;
+    const yPct = (yPx / wrapper.offsetHeight) * 100;
+
+    const newNote = {
+      id: Date.now().toString(),
+      page: this.activeProject.currentPageNum || 1,
+      x: xPct,
+      y: yPct,
+      text: '',
+      created: new Date().toISOString()
+    };
+
+    if (!this.activeProject.notes) this.activeProject.notes = [];
+    this.activeProject.notes.push(newNote);
+
+    this.renderNotesOnOverlay();
+    
+    // Focus immediately on editor
+    const pin = this.dom.annotationsOverlay.querySelector(`[data-id="${newNote.id}"]`);
+    if (pin) this.openStickyNoteEditor(newNote, pin);
+  },
+
+  placeStickyNoteAtCenter() {
+    if (!this.activeProject) return;
+    
+    // Put note at the middle of viewport
+    const newNote = {
+      id: Date.now().toString(),
+      page: this.activeProject.currentPageNum || 1,
+      x: 50,
+      y: 50,
+      text: 'Note details...',
+      created: new Date().toISOString()
+    };
+
+    if (!this.activeProject.notes) this.activeProject.notes = [];
+    this.activeProject.notes.push(newNote);
+
+    this.renderNotesOnOverlay();
+    this.renderNotesLog();
+    this.saveActiveProjectState();
+
+    const pin = this.dom.annotationsOverlay.querySelector(`[data-id="${newNote.id}"]`);
+    if (pin) this.openStickyNoteEditor(newNote, pin);
+  },
+
+  openStickyNoteEditor(note, pinElement) {
+    // Close existing editors first
+    const activeEditors = document.querySelectorAll('.sticky-note-editor');
+    activeEditors.forEach(ae => ae.remove());
+    
+    const pins = document.querySelectorAll('.sticky-note-pin');
+    pins.forEach(p => p.classList.remove('active'));
+
+    pinElement.classList.add('active');
+
+    const editor = document.createElement('div');
+    editor.className = 'sticky-note-editor';
+    editor.innerHTML = `
+      <textarea placeholder="Type a note...">${note.text}</textarea>
+      <div class="sticky-note-editor-footer">
+        <button class="sticky-note-delete-btn">Delete</button>
+        <button class="sticky-note-save-btn">Save</button>
+      </div>
+    `;
+
+    // Handle clicks inside editor without bubble trigger to pattern canvas
+    editor.addEventListener('click', (e) => e.stopPropagation());
+    editor.addEventListener('dblclick', (e) => e.stopPropagation());
+
+    const txtArea = editor.querySelector('textarea');
+    
+    // Save note trigger
+    editor.querySelector('.sticky-note-save-btn').addEventListener('click', () => {
+      note.text = txtArea.value.trim();
+      this.saveActiveProjectState();
+      this.renderNotesOnOverlay();
+      this.renderNotesLog();
+    });
+
+    // Delete note trigger
+    editor.querySelector('.sticky-note-delete-btn').addEventListener('click', () => {
+      this.activeProject.notes = this.activeProject.notes.filter(n => n.id !== note.id);
+      this.saveActiveProjectState();
+      this.renderNotesOnOverlay();
+      this.renderNotesLog();
+    });
+
+    pinElement.appendChild(editor);
+    txtArea.focus();
+  },
+
+  renderNotesLog() {
+    const log = this.dom.notesLogContainer;
+    log.innerHTML = '';
+
+    if (!this.activeProject || !this.activeProject.notes || this.activeProject.notes.length === 0) {
+      log.innerHTML = `<p class="empty-notes-text">No notes yet. Double-click the pattern or click "+ Add" to place an interactive note!</p>`;
+      return;
+    }
+
+    // Sort notes chronologically
+    const sorted = [...this.activeProject.notes].sort((a,b) => new Date(b.created) - new Date(a.created));
+
+    sorted.forEach(note => {
+      const item = document.createElement('div');
+      item.className = 'notes-log-item';
+      item.innerHTML = `
+        <div class="notes-log-item-header">
+          <span>Page ${note.page}</span>
+          <span>${new Date(note.created).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+        </div>
+        <div class="notes-log-item-text">${note.text || '<i>Empty note. Click to write details.</i>'}</div>
+      `;
+
+      item.addEventListener('click', () => {
+        // Go to page note was written on
+        if (this.activeProject.currentPageNum !== note.page) {
+          this.activeProject.currentPageNum = note.page;
+          this.renderPdfPage().then(() => {
+            this.focusOnPin(note.id);
+          });
+        } else {
+          this.focusOnPin(note.id);
+        }
+      });
+
+      log.appendChild(item);
+    });
+  },
+
+  focusOnPin(noteId) {
+    const pin = this.dom.annotationsOverlay.querySelector(`[data-id="${noteId}"]`);
+    if (pin) {
+      // Find note data
+      const note = this.activeProject.notes.find(n => n.id === noteId);
+      this.openStickyNoteEditor(note, pin);
+      
+      // Smooth scroll inside viewport
+      pin.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }
+  },
+
+  // ----------------------------------------------------
+  // satisfecho COUNTER MODULE
+  // ----------------------------------------------------
+  updateCounterUI() {
+    if (!this.activeProject) return;
+
+    // 1. Rows
+    const val = this.activeProject.currentRow;
+    this.dom.countRowValue.innerText = val.toString();
+    this.dom.trackerRowNum.innerText = val.toString();
+
+    // Trigger bounce scale micro-animation
+    this.dom.countRowValue.classList.remove('bounce-animation');
+    void this.dom.countRowValue.offsetWidth; // trigger reflow
+    this.dom.countRowValue.classList.add('bounce-animation');
+
+    const target = this.activeProject.targetRows || 100;
+    const pct = Math.min(100, Math.round((val / target) * 100));
+    this.dom.rowProgressFill.style.width = `${pct}%`;
+    this.dom.rowProgressText.innerText = `Row ${val} of ${target}`;
+
+    // 2. Stitches
+    this.dom.countStitchValue.innerText = this.activeProject.currentStitch.toString();
+    
+    // Check if we can display stitch guidelines
+    if (this.activeProject.patternType === 'sample') {
+      this.dom.stitchPerRowText.innerText = `Standard Row: 22 stitches`;
+    } else {
+      this.dom.stitchPerRowText.innerText = `Tracked stitches this row`;
+    }
+  },
+
+  adjustRow(amount) {
+    if (!this.activeProject) return;
+    
+    const newVal = Math.max(1, this.activeProject.currentRow + amount);
+    this.setRow(newVal);
+  },
+
+  setRow(val) {
+    if (!this.activeProject) return;
+    this.activeProject.currentRow = val;
+    this.updateCounterUI();
+    AudioSynth.playWoodClick();
+    this.saveActiveProjectState();
+  },
+
+  async promptNewRowTarget() {
+    if (!this.activeProject) return;
+    const currentTarget = this.activeProject.targetRows || 100;
+    const val = await Dialogs.prompt('Set row progress target (total rows to knit):', currentTarget);
+    if (val !== null && val !== '') {
+      const num = parseInt(val);
+      if (!isNaN(num) && num > 0) {
+        this.activeProject.targetRows = num;
+        this.updateCounterUI();
+        this.saveActiveProjectState();
+      }
+    }
+  },
+
+  adjustStitch(amount) {
+    if (!this.activeProject) return;
+    const newVal = Math.max(0, this.activeProject.currentStitch + amount);
+    this.setStitch(newVal);
+  },
+
+  setStitch(val) {
+    if (!this.activeProject) return;
+    this.activeProject.currentStitch = val;
+    this.updateCounterUI();
+    AudioSynth.playWoodClick();
+    this.saveActiveProjectState();
+  },
+
+  // ----------------------------------------------------
+  // SUB-COUNTERS OPERATIONS
+  // ----------------------------------------------------
+  renderSubcounters() {
+    const container = this.dom.subcountersContainer;
+    container.innerHTML = '';
+
+    if (!this.activeProject || !this.activeProject.subCounters) return;
+
+    this.activeProject.subCounters.forEach(sub => {
+      const item = document.createElement('div');
+      item.className = 'subcounter-card-item';
+      item.innerHTML = `
+        <div class="subcounter-info">
+          <span class="subcounter-name">${sub.name}</span>
+          <span class="subcounter-val-badge">${sub.value}</span>
+        </div>
+        <div class="subcounter-controls">
+          <button class="btn-subcounter-adjust dec-sub">-</button>
+          <button class="btn-subcounter-adjust inc-sub">+</button>
+          <button class="subcounter-delete-btn" title="Remove sub-counter">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      `;
+
+      item.querySelector('.inc-sub').addEventListener('click', () => {
+        sub.value++;
+        this.renderSubcounters();
+        AudioSynth.playWoodClick();
+        this.saveActiveProjectState();
+      });
+
+      item.querySelector('.dec-sub').addEventListener('click', () => {
+        sub.value = Math.max(0, sub.value - 1);
+        this.renderSubcounters();
+        AudioSynth.playWoodClick();
+        this.saveActiveProjectState();
+      });
+
+      item.querySelector('.subcounter-delete-btn').addEventListener('click', () => {
+        this.activeProject.subCounters = this.activeProject.subCounters.filter(s => s.id !== sub.id);
+        this.renderSubcounters();
+        this.saveActiveProjectState();
+      });
+
+      container.appendChild(item);
+    });
+  },
+
+  async promptCreateSubcounter() {
+    if (!this.activeProject) return;
+    const name = await Dialogs.prompt('Enter a label for this sub-counter (e.g., "Left Sleeve decreases", "Cable repeats"):');
+    if (name && name.trim()) {
+      if (!this.activeProject.subCounters) this.activeProject.subCounters = [];
+      
+      this.activeProject.subCounters.push({
+        id: Date.now().toString(),
+        name: name.trim(),
+        value: 0
+      });
+
+      this.renderSubcounters();
+      this.saveActiveProjectState();
+    }
+  },
+
+
+
+  // ----------------------------------------------------
+  // KEYBOARD ACCESSIBILITY BINDINGS
+  // ----------------------------------------------------
+  handleKeyboardShortcuts(e) {
+    // Ignore keys if user is typing in notes/form fields
+    if (document.activeElement.tagName === 'INPUT' || 
+        document.activeElement.tagName === 'TEXTAREA' || 
+        document.activeElement.tagName === 'SELECT') {
+      return;
+    }
+
+    if (this.activeView !== 'workspace') return;
+
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        // Space advances row, Shift+Space goes back
+        if (e.shiftKey) {
+          this.adjustRow(-1);
+        } else {
+          this.adjustRow(1);
+        }
+        break;
+      
+      case 'ArrowUp':
+        e.preventDefault();
+        // Move row line tracker up
+        this.nudgeTracker(-1);
+        break;
+
+      case 'ArrowDown':
+        e.preventDefault();
+        // Move row line tracker down
+        this.nudgeTracker(1);
+        break;
+
+      case 'Tab':
+        e.preventDefault();
+        // Tab increments stitches, Shift+Tab decrements
+        if (e.shiftKey) {
+          this.adjustStitch(-1);
+        } else {
+          this.adjustStitch(1);
+        }
+        break;
+    }
+  },
+
+  // ----------------------------------------------------
+  // NEW PROJECT CREATOR MODAL FORM
+  // ----------------------------------------------------
+  showProjectModal(visible) {
+    this.dom.modalProject.classList.toggle('active', visible);
+    if (visible) {
+      this.dom.projectForm.reset();
+      this.clearLoadedFile();
+      this.dom.patternFileInput.required = true;
+    }
+  },
+
+  processPatternFile(file) {
+    const reader = new FileReader();
+    this.loadedFileName = file.name;
+    this.loadedFileType = file.type;
+
+    if (file.type === 'application/pdf') {
+      reader.onload = (e) => {
+        this.loadedFileData = e.target.result;
+        this.updateFileSelectedIndicator();
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type.startsWith('image/')) {
+      reader.onload = (e) => {
+        this.loadedFileData = e.target.result;
+        this.updateFileSelectedIndicator();
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert('Unsupported file format. Please upload a PDF pattern or image file.');
+      this.clearLoadedFile();
+    }
+  },
+
+  updateFileSelectedIndicator() {
+    this.dom.uploadBox.classList.add('hidden');
+    this.dom.fileSelectedIndicator.classList.remove('hidden');
+    this.dom.selectedFileName.innerText = this.loadedFileName;
+    this.dom.patternFileInput.required = false;
+  },
+
+  clearLoadedFile() {
+    this.loadedFileData = null;
+    this.loadedFileName = '';
+    this.loadedFileType = '';
+    this.dom.patternFileInput.value = '';
+    this.dom.uploadBox.classList.remove('hidden');
+    this.dom.fileSelectedIndicator.classList.add('hidden');
+    this.dom.patternFileInput.required = true;
+  },
+
+  async loadQuickstartSample() {
+    const project = {
+      id: 'sample-' + Date.now(),
+      title: 'Cozy Autumn Leaf Scarf',
+      category: 'Scarf',
+      targetRows: 20,
+      currentRow: 1,
+      currentStitch: 0,
+      subCounters: [],
+      patternType: 'sample',
+      created: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      notes: [],
+      timeSpent: 0,
+      bookmarks: [],
+      pageRotations: {},
+      thumbnail: this.generateSampleThumbnail()
+    };
+
+    await DBManager.saveProject(project);
+    await this.loadAllProjectsFromDB();
+    this.renderProjectsGrid();
+    
+    // Automatically open this project
+    this.enterWorkspace(project.id);
+  },
+
+  async handleProjectSubmit(e) {
+    e.preventDefault();
+
+    const title = document.getElementById('proj-title').value.trim();
+    const category = document.getElementById('proj-category').value;
+    const targetRows = parseInt(document.getElementById('proj-target-rows').value) || 100;
+    const patternSource = 'upload';
+
+    if (!this.loadedFileData) {
+      alert('Please upload a pattern PDF or Image.');
+      return;
+    }
+
+    const newProject = {
+      id: Date.now().toString(),
+      title: title,
+      category: category,
+      targetRows: targetRows,
+      currentRow: 1,
+      currentStitch: 0,
+      subCounters: [],
+      patternType: patternSource,
+      created: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      notes: [],
+      timeSpent: 0,
+      bookmarks: [],
+      pageRotations: {}
+    };
+
+    newProject.patternFile = this.loadedFileData;
+    newProject.patternFileName = this.loadedFileName;
+    newProject.patternFileType = this.loadedFileType;
+    
+    // Generate thumbnail
+    if (this.loadedFileType === 'application/pdf') {
+      newProject.thumbnail = await this.generatePdfThumbnail(this.loadedFileData);
+    } else if (this.loadedFileType.startsWith('image/')) {
+      newProject.thumbnail = this.loadedFileData;
+    }
+
+    await DBManager.saveProject(newProject);
+    this.showProjectModal(false);
+    
+    await this.loadAllProjectsFromDB();
+    this.renderProjectsGrid();
+    
+    // Immediately open newly created project
+    this.enterWorkspace(newProject.id);
+  },
+
+  // ----------------------------------------------------
+  // TOOLKIT CALCULATORS & REFERENCE DRAWER
+  // ----------------------------------------------------
+  toggleToolkitDrawer(visible) {
+    this.dom.toolkitDrawer.classList.toggle('active', visible);
+  },
+
+  switchToolkitTab(tab) {
+    this.dom.tabBtnGauge.classList.toggle('active', tab === 'gauge');
+    this.dom.tabBtnDictionary.classList.toggle('active', tab === 'dictionary');
+    this.dom.tabBtnBackup.classList.toggle('active', tab === 'backup');
+    
+    this.dom.tabContentGauge.classList.toggle('active-content', tab === 'gauge');
+    this.dom.tabContentDictionary.classList.toggle('active-content', tab === 'dictionary');
+    this.dom.tabContentBackup.classList.toggle('active-content', tab === 'backup');
+  },
+
+  runGaugeCalculation() {
+    const sts = parseFloat(this.dom.gaugeSwatchSts.value);
+    const w = parseFloat(this.dom.gaugeSwatchW.value);
+    const rows = parseFloat(this.dom.gaugeSwatchRows.value);
+    const h = parseFloat(this.dom.gaugeSwatchH.value);
+    
+    const targetW = parseFloat(this.dom.gaugeTargetW.value);
+    const targetH = parseFloat(this.dom.gaugeTargetH.value);
+
+    if (isNaN(sts) || isNaN(w) || isNaN(rows) || isNaN(h) || isNaN(targetW) || isNaN(targetH)) {
+      alert('Please fill out all calculator fields.');
+      return;
+    }
+
+    // Calculations
+    const stsPerUnit = sts / w;
+    const rowsPerUnit = rows / h;
+
+    const castOn = Math.round(targetW * stsPerUnit);
+    const totalRows = Math.round(targetH * rowsPerUnit);
+
+    this.dom.resCastOn.innerText = castOn.toString();
+    this.dom.resTotalRows.innerText = totalRows.toString();
+    this.dom.gaugeResults.classList.remove('hidden');
+  },
+
+  renderStitchDictionary() {
+    const list = this.dom.stitchList;
+    list.innerHTML = '';
+
+    const query = this.dom.stitchSearch.value.trim().toLowerCase();
+
+    const filtered = STITCH_DICTIONARY.filter(item => {
+      return item.name.toLowerCase().includes(query) || 
+             item.abbr.toLowerCase().includes(query) ||
+             item.desc.toLowerCase().includes(query);
+    });
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<p class="empty-notes-text">No stitches found matching "${query}"</p>`;
+      return;
+    }
+
+    filtered.forEach(stitch => {
+      const card = document.createElement('div');
+      card.className = 'stitch-card';
+      card.innerHTML = `
+        <div class="stitch-card-header">
+          <span class="stitch-title">${stitch.name}</span>
+          <span class="stitch-abbr">${stitch.abbr.toUpperCase()}</span>
+        </div>
+        <p class="stitch-desc">${stitch.desc}</p>
+        <div class="stitch-instruction">${stitch.inst}</div>
+      `;
+      list.appendChild(card);
+    });
+  },
+
+  // ----------------------------------------------------
+  // ADVANCED FEATURE HELPERS: THUMBNAILS, BOOKMARKS & ROTATION
+  // ----------------------------------------------------
+  async generatePdfThumbnail(fileData) {
+    try {
+      const binaryString = atob(fileData.split(',')[1]);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+      const pdfDoc = await loadingTask.promise;
+      const page = await pdfDoc.getPage(1);
+      
+      const viewport = page.getViewport({ scale: 0.35 }); // Scale down for thumbnail
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      
+      await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+      }).promise;
+      
+      return canvas.toDataURL('image/jpeg', 0.6);
+    } catch (err) {
+      console.error('Error generating PDF thumbnail:', err);
+      return null;
+    }
+  },
+
+  generateSampleThumbnail() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 200;
+    canvas.height = 250;
+    const ctx = canvas.getContext('2d');
+    
+    // Draw cozy paper thumbnail mock
+    ctx.fillStyle = '#FAF7F2';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.strokeStyle = '#D4C5B3';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+    
+    ctx.fillStyle = '#4A3B32';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Cozy Scarf', canvas.width / 2, 100);
+    
+    ctx.font = 'italic 11px Georgia, serif';
+    ctx.fillStyle = '#7C6758';
+    ctx.fillText('Sample Pattern', canvas.width / 2, 130);
+
+    // Ball of yarn outline
+    ctx.strokeStyle = 'rgba(142, 115, 85, 0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, 190, 25, 0, Math.PI * 2);
+    ctx.stroke();
+
+    return canvas.toDataURL('image/jpeg', 0.6);
+  },
+
+  drawRotatedCanvas(source, canvas, rotation) {
+    const ctx = canvas.getContext('2d');
+    const w = source.width;
+    const h = source.height;
+    
+    if (rotation === 90 || rotation === 270) {
+      canvas.width = h;
+      canvas.height = w;
+    } else {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(source, -w / 2, -h / 2);
+    ctx.restore();
+  },
+
+  toggleBookmark() {
+    if (!this.activeProject) return;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    if (!this.activeProject.bookmarks) this.activeProject.bookmarks = [];
+    
+    const idx = this.activeProject.bookmarks.indexOf(pageNum);
+    if (idx > -1) {
+      this.activeProject.bookmarks.splice(idx, 1);
+    } else {
+      this.activeProject.bookmarks.push(pageNum);
+      this.activeProject.bookmarks.sort((a, b) => a - b);
+    }
+    
+    this.updateBookmarkButtonUI();
+    this.renderBookmarks();
+    this.saveActiveProjectState();
+  },
+
+  updateBookmarkButtonUI() {
+    if (!this.activeProject) return;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    const bookmarks = this.activeProject.bookmarks || [];
+    const isBookmarked = bookmarks.includes(pageNum);
+    
+    this.dom.btnBookmarkPage.classList.toggle('active-bookmark', isBookmarked);
+  },
+
+  renderBookmarks() {
+    const container = this.dom.bookmarksListContainer;
+    container.innerHTML = '';
+    
+    if (!this.activeProject || !this.activeProject.bookmarks || this.activeProject.bookmarks.length === 0) {
+      container.innerHTML = `<p class="empty-bookmarks-text">No page bookmarks. Click the bookmark icon on the toolbar to add this page!</p>`;
+      return;
+    }
+    
+    this.activeProject.bookmarks.forEach(page => {
+      const item = document.createElement('div');
+      item.className = 'bookmark-item';
+      item.innerHTML = `
+        <span class="bookmark-item-label">
+          <svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2.5" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          Page ${page}
+        </span>
+        <button class="bookmark-item-delete" title="Delete bookmark">
+          &times;
+        </button>
+      `;
+      
+      item.addEventListener('click', (e) => {
+        if (!e.target.closest('.bookmark-item-delete')) {
+          this.jumpToPageWithReturnTrack(page);
+        }
+      });
+      
+      item.querySelector('.bookmark-item-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.activeProject.bookmarks = this.activeProject.bookmarks.filter(b => b !== page);
+        this.updateBookmarkButtonUI();
+        this.renderBookmarks();
+        this.saveActiveProjectState();
+      });
+      
+      container.appendChild(item);
+    });
+  },
+
+  jumpToPageWithReturnTrack(targetPage) {
+    if (!this.activeProject) return;
+    const currentPage = this.activeProject.currentPageNum || 1;
+    if (currentPage === targetPage) return;
+    
+    // Set departure page so they can return
+    this.lastPageBeforeJump = currentPage;
+    this.updateJumpBackButtonUI();
+    
+    this.activeProject.currentPageNum = targetPage;
+    this.saveActiveProjectState();
+    
+    if (this.activeProject.patternType === 'sample') {
+      this.loadAndRenderPattern();
+    } else {
+      if (this.activeProject.patternFileType && this.activeProject.patternFileType.startsWith('image/')) {
+        this.loadAndRenderPattern();
+      } else {
+        this.renderPdfPage();
+      }
+    }
+    this.updateBookmarkButtonUI();
+  },
+
+  updateJumpBackButtonUI() {
+    const btn = this.dom.btnJumpBack;
+    if (this.lastPageBeforeJump !== null) {
+      btn.innerText = `← Back to Page ${this.lastPageBeforeJump}`;
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  },
+
+  jumpBack() {
+    if (this.lastPageBeforeJump === null) return;
+    const target = this.lastPageBeforeJump;
+    this.lastPageBeforeJump = null;
+    this.updateJumpBackButtonUI();
+    
+    this.activeProject.currentPageNum = target;
+    this.saveActiveProjectState();
+    
+    if (this.activeProject.patternType === 'sample') {
+      this.loadAndRenderPattern();
+    } else {
+      if (this.activeProject.patternFileType && this.activeProject.patternFileType.startsWith('image/')) {
+        this.loadAndRenderPattern();
+      } else {
+        this.renderPdfPage();
+      }
+    }
+    this.updateBookmarkButtonUI();
+  },
+
+  rotatePage() {
+    if (!this.activeProject) return;
+    const pageNum = this.activeProject.currentPageNum || 1;
+    if (!this.activeProject.pageRotations) this.activeProject.pageRotations = {};
+    
+    const currentRot = this.activeProject.pageRotations[pageNum] || 0;
+    const newRot = (currentRot + 90) % 360;
+    this.activeProject.pageRotations[pageNum] = newRot;
+    
+    this.saveActiveProjectState();
+    
+    if (this.activeProject.patternType === 'sample') {
+      this.loadAndRenderPattern();
+    } else {
+      if (this.activeProject.patternFileType && this.activeProject.patternFileType.startsWith('image/')) {
+        this.loadAndRenderPattern();
+      } else {
+        this.renderPdfPage();
+      }
+    }
+  },
+
+  async exportBackup() {
+    try {
+      const projects = await DBManager.getAllProjects();
+      const backupData = {
+        app: 'KnitFlow',
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        projects: projects
+      };
+      
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `knitflow-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      await Dialogs.alert('Failed to export projects: ' + err.message);
+    }
+  },
+
+  async importBackup(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backup = JSON.parse(event.target.result);
+        if (backup.app !== 'KnitFlow' || !Array.isArray(backup.projects)) {
+          await Dialogs.alert('Invalid backup file. Make sure you upload a .json file exported from KnitFlow.');
+          return;
+        }
+        
+        const count = backup.projects.length;
+        const confirmMerge = await Dialogs.confirm(`Are you sure you want to import ${count} projects? This will merge them with your current project list.`);
+        if (!confirmMerge) {
+          this.dom.backupFileInput.value = '';
+          return;
+        }
+        
+        // Save each project into DB
+        for (const project of backup.projects) {
+          if (project.id && project.title) {
+            await DBManager.saveProject(project);
+          }
+        }
+        
+        await Dialogs.alert(`Successfully imported ${count} projects!`);
+        this.dom.backupFileInput.value = '';
+        
+        // Reload and display projects
+        await this.loadAllProjectsFromDB();
+        this.renderProjectsGrid();
+        
+      } catch (err) {
+        await Dialogs.alert('Error parsing backup file: ' + err.message);
+        this.dom.backupFileInput.value = '';
+      }
+    };
+    reader.readAsText(file);
+  },
+
+
+};
+
+// Initialize App
+window.addEventListener('DOMContentLoaded', () => App.init());

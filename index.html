@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KnitFlow - Premium Interactive Knitting Progress Tracker</title>
+  
+  <!-- Local Offline PDF.js -->
+  <script src="lib/pdf.min.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="light-mode">
+
+  <!-- SOUND TOGGLE (For Web Audio Synthesized Cozy Clicks) -->
+  <audio id="click-sound-fallback" style="display:none;"></audio>
+
+  <!-- APP CONTAINER -->
+  <div class="app-container">
+    
+    <!-- HEADER BAR -->
+    <header class="app-header">
+      <div class="header-logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2">
+          <!-- Custom Cozy Ball of Yarn SVG -->
+          <circle cx="12" cy="12" r="9" />
+          <path d="M7 12 C 7 8, 17 8, 17 12" />
+          <path d="M7 12 C 7 16, 17 16, 17 12" />
+          <path d="M12 7 C 8 7, 8 17, 12 17" />
+          <path d="M12 7 C 16 7, 16 17, 12 17" />
+          <path d="M4 12 L2 14 M20 12 L22 10" />
+        </svg>
+        <span class="logo-text">KnitFlow</span>
+      </div>
+      
+      <div class="header-actions">
+        <button id="btn-toolkit" class="btn btn-secondary">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Toolkit
+        </button>
+        <button id="btn-sound-toggle" class="btn btn-icon-only tooltip" data-tooltip="Toggle click sounds">
+          <svg id="sound-icon-on" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg id="sound-icon-off" class="hidden" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></svg>
+        </button>
+        <button id="btn-theme-toggle" class="btn btn-icon-only tooltip" data-tooltip="Switch theme">
+          <!-- Sun icon -->
+          <svg id="theme-sun" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 18.36l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <!-- Moon icon -->
+          <svg id="theme-moon" class="hidden" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN VIEW AREA -->
+    <main class="app-main">
+      
+      <!-- VIEW: DASHBOARD (PROJECTS OVERVIEW) -->
+      <section id="view-dashboard" class="view active">
+        <div class="welcome-banner">
+          <div class="welcome-text">
+            <h1>Welcome back, maker</h1>
+            <p>Select an ongoing project or scan a new pattern to begin your tracking session.</p>
+          </div>
+          <button id="btn-create-project" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" style="margin-right:8px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            New Project
+          </button>
+        </div>
+
+        <div class="dashboard-stats-grid">
+          <div class="stat-card">
+            <span class="stat-title">Active Projects</span>
+            <span id="stat-active-count" class="stat-value">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">Total Stitches Knit</span>
+            <span id="stat-stitch-count" class="stat-value">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">Completed Projects</span>
+            <span id="stat-completed-count" class="stat-value">0</span>
+          </div>
+        </div>
+
+        <div class="projects-section">
+          <h2>Your Knitting Projects</h2>
+          <div id="projects-grid" class="projects-grid">
+            <!-- Dynamic project cards go here -->
+          </div>
+          <div id="empty-state" class="empty-state hidden">
+            <svg viewBox="0 0 24 24" width="60" height="60" stroke="var(--color-border)" stroke-width="1.5" fill="none">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            <h3>No projects yet</h3>
+            <p>Start by scanning a pattern or load our pre-made cozy autumn scarf to test out KnitFlow.</p>
+            <button id="btn-quickstart" class="btn btn-secondary" style="margin-top: 15px;">
+              Load Sample Pattern
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: TRACKER WORKSPACE -->
+      <section id="view-workspace" class="view">
+        <div class="workspace-layout">
+          
+          <!-- LEFT SIDEBAR: Project Info & Notes -->
+          <aside class="workspace-sidebar left-sidebar">
+            <button id="btn-back-dashboard" class="btn-back">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Back to Projects
+            </button>
+
+            <div class="sidebar-block project-summary">
+              <h3 id="workspace-project-title" class="project-title-heading">Project Title</h3>
+              <div class="project-meta-pills">
+                <span id="workspace-project-category" class="meta-pill">Sweater</span>
+                <span id="workspace-project-page" class="meta-pill">Page 1/1</span>
+              </div>
+            </div>
+
+            <!-- Bookmarks list -->
+            <div class="sidebar-block bookmarks-sidebar-block">
+              <div class="block-header">
+                <h4>Bookmarks</h4>
+              </div>
+              <div id="bookmarks-list-container" class="bookmarks-list-container">
+                <p class="empty-bookmarks-text">No page bookmarks. Click the bookmark icon on the toolbar to add this page!</p>
+              </div>
+            </div>
+
+            <!-- Sticky Notes Log -->
+            <div class="sidebar-block flex-grow-block">
+              <div class="block-header">
+                <h4>Pattern Notes</h4>
+                <button id="btn-add-sticky" class="btn btn-text-only">+ Add</button>
+              </div>
+              <div id="notes-log-container" class="notes-log-container">
+                <!-- Notes will list here -->
+                <p class="empty-notes-text">No notes yet. Double-click the pattern or click "+ Add" to place an interactive note!</p>
+              </div>
+            </div>
+
+            <div class="sidebar-block">
+              <button id="btn-delete-project" class="btn btn-danger-text">Delete Project</button>
+            </div>
+          </aside>
+
+          <!-- CENTER VIEWPORT: Pattern Interactive Sheet -->
+          <div class="workspace-viewport">
+            <div class="viewport-toolbar">
+              <div class="toolbar-group">
+                <button id="btn-prev-page" class="btn btn-icon-only small" title="Previous Page">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span id="page-indicator" class="page-indicator-text">Page 1 / 1</span>
+                <button id="btn-next-page" class="btn btn-icon-only small" title="Next Page">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <button id="btn-bookmark-page" class="btn btn-icon-only small tooltip" data-tooltip="Bookmark current page" style="margin-left: 6px;">
+                  <svg id="bookmark-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </button>
+                <button id="btn-jump-back" class="btn btn-secondary small hidden" style="margin-left: 8px; font-size: 0.8rem; padding: 4px 10px; height: 32px; background-color: var(--color-accent-light); border-color: var(--color-accent); color: var(--color-accent); font-weight: 600;">
+                  ← Back to Page 1
+                </button>
+              </div>
+
+              <div class="toolbar-group">
+                <button id="btn-zoom-out" class="btn btn-icon-only small" title="Zoom Out">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <span id="zoom-value" class="zoom-value-text">100%</span>
+                <button id="btn-zoom-in" class="btn btn-icon-only small" title="Zoom In">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button id="btn-rotate-page" class="btn btn-icon-only small tooltip" data-tooltip="Rotate page 90°" style="margin-left: 6px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M21.5 2v6h-6"/>
+                    <path d="M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="toolbar-group">
+                <button id="btn-toggle-tracker-line" class="btn active-toggle" title="Toggle Row Line Tracker">
+                  Line Tracker
+                </button>
+                <button id="btn-toggle-magnifier" class="btn" title="Toggle Magnifying Glass Chart Reader">
+                  Chart Magnifier
+                </button>
+              </div>
+            </div>
+
+            <!-- THE INTERACTIVE CANVAS CONTAINER -->
+            <div id="interactive-container" class="interactive-container">
+              <!-- Grid overlay layer -->
+              <div id="pattern-wrapper" class="pattern-wrapper">
+                <canvas id="pattern-canvas"></canvas>
+                
+                <!-- SVG/HTML interactive annotations overlay -->
+                <div id="annotations-overlay" class="annotations-overlay"></div>
+                
+                <!-- Dynamic Horizontal Row Tracker Line -->
+                <div id="row-tracker-line" class="row-tracker-line">
+                  <div class="tracker-handle handle-left"></div>
+                  <div class="tracker-indicator">
+                    <span class="tracker-label-text">Row</span>
+                    <span id="tracker-row-num">1</span>
+                  </div>
+                  <div class="tracker-handle handle-right"></div>
+                  <div class="tracker-options">
+                    <button id="tracker-btn-opacity" class="tracker-opt-btn" title="Toggle opacity">
+                      <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10v0a10 10 0 0 1-10 10v-20z" fill="currentColor"/></svg>
+                    </button>
+                    <button id="tracker-btn-color" class="tracker-opt-btn" title="Change tracker color">
+                      <span class="color-dot"></span>
+                    </button>
+                    <button id="tracker-btn-size" class="tracker-opt-btn" title="Adjust line thickness">
+                      <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="12" x2="20" y2="12" stroke-width="2"/><line x1="4" y1="16" x2="20" y2="16" stroke-width="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Magnifier overlay loop -->
+                <div id="magnifier-glass" class="magnifier-glass hidden">
+                  <canvas id="magnifier-canvas"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT SIDEBAR: 만족스러운 Counters Panel -->
+          <aside class="workspace-sidebar right-sidebar">
+            <!-- Counter block 1: Rows -->
+            <div class="counter-card counter-main">
+              <div class="counter-card-header">
+                <span class="counter-label">CURRENT ROW</span>
+                <button id="btn-reset-rows" class="counter-reset" title="Reset Rows">
+                  <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+              </div>
+              <div class="counter-numeric-wrapper">
+                <button id="btn-row-minus" class="counter-adjust minus" title="Decrease row (Alt + ArrowDown)">-</button>
+                <div class="numeric-display">
+                  <span id="count-row-value" class="counter-value bounce-animation">1</span>
+                </div>
+                <button id="btn-row-plus" class="counter-adjust plus" title="Increase row (Space or ArrowUp)">+</button>
+              </div>
+              <div class="progress-bar-container">
+                <div id="row-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+              </div>
+              <div class="counter-footer">
+                <span id="row-progress-text">Row 1 of 120</span>
+                <button id="btn-set-row-target" class="btn-text-only edit-target">Set Target</button>
+              </div>
+            </div>
+
+            <!-- Counter block 2: Stitches -->
+            <div class="counter-card counter-stitch">
+              <div class="counter-card-header">
+                <span class="counter-label">STITCH COUNTER</span>
+                <button id="btn-reset-stitches" class="counter-reset">Reset</button>
+              </div>
+              <div class="counter-numeric-wrapper small-counter">
+                <button id="btn-stitch-minus" class="counter-adjust minus">-</button>
+                <div class="numeric-display">
+                  <span id="count-stitch-value" class="counter-value">0</span>
+                </div>
+                <button id="btn-stitch-plus" class="counter-adjust plus">+</button>
+              </div>
+              <div class="counter-footer-stitch">
+                <span id="stitch-per-row-text">Row stitch: 0 / 22</span>
+              </div>
+            </div>
+
+            <!-- Counter block 3: Custom Sub-counters (Dynamic) -->
+            <div class="sidebar-block custom-counters-block">
+              <div class="block-header">
+                <h4>Sub-Counters</h4>
+                <button id="btn-add-subcounter" class="btn btn-text-only">+ Add Counter</button>
+              </div>
+              <div id="subcounters-container" class="subcounters-container">
+                <!-- Dynamic counters go here -->
+              </div>
+            </div>
+
+            <!-- Quick Keyboard Cheat Sheet -->
+            <div class="sidebar-block keyboard-shortcuts-card">
+              <h4>Keyboard Shortcuts</h4>
+              <div class="shortcut-list">
+                <div class="shortcut-item">
+                  <kbd>Space</kbd> <span>Row +1</span>
+                </div>
+                <div class="shortcut-item">
+                  <kbd>Shift + Space</kbd> <span>Row -1</span>
+                </div>
+                <div class="shortcut-item">
+                  <kbd>Arrow Up / Down</kbd> <span>Nudge Tracker Line</span>
+                </div>
+                <div class="shortcut-item">
+                  <kbd>Tab</kbd> <span>Stitch +1</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <div id="modal-project" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Create New Knitting Project</h3>
+        <button id="btn-close-project-modal" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="project-form">
+        <div class="form-group">
+          <label for="proj-title">Project Name</label>
+          <input type="text" id="proj-title" placeholder="e.g., Autumn Leaves Cowl" required autocomplete="off">
+        </div>
+        
+        <div class="form-group-row">
+          <div class="form-group half">
+            <label for="proj-category">Category</label>
+            <select id="proj-category">
+              <option value="Scarf">Scarf</option>
+              <option value="Sweater">Sweater / Cardigan</option>
+              <option value="Socks">Socks</option>
+              <option value="Hat">Hat / Beanie</option>
+              <option value="Blanket">Blanket</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group half">
+            <label for="proj-target-rows">Target Rows</label>
+            <input type="number" id="proj-target-rows" value="100" min="1" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Knitting Pattern (PDF or Image)</label>
+        </div>
+
+        <!-- File Upload Area (only visible when 'upload' selected) -->
+        <div id="file-upload-section" class="form-group upload-zone">
+          <input type="file" id="pattern-file" accept="application/pdf,image/*" class="file-input-hidden">
+          <div id="upload-box" class="upload-box-design">
+            <svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" stroke-width="1.5" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+            <p class="upload-main-text">Drag & drop your pattern here</p>
+            <p class="upload-sub-text">Supports PDF, JPG, PNG up to 10MB</p>
+            <button type="button" id="btn-browse-file" class="btn btn-secondary small">Browse Files</button>
+          </div>
+          <div id="file-selected-indicator" class="file-selected-indicator hidden">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="var(--color-success)" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span id="selected-file-name">filename.pdf</span>
+            <button type="button" id="btn-clear-file" class="btn-clear">&times;</button>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-project" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="btn-save-project" class="btn btn-primary">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOOLKIT DRAWER -->
+  <div id="toolkit-drawer" class="drawer-overlay">
+    <div class="drawer-card">
+      <div class="drawer-header">
+        <h3>Knitter's Toolkit</h3>
+        <button id="btn-close-toolkit" class="drawer-close-btn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        
+        <!-- Tab navigation -->
+        <div class="drawer-tabs">
+          <button id="tab-btn-gauge" class="drawer-tab active">Gauge Calculator</button>
+          <button id="tab-btn-dictionary" class="drawer-tab">Stitch Dictionary</button>
+          <button id="tab-btn-backup" class="drawer-tab">Backup & Export</button>
+        </div>
+
+        <!-- TAB CONTENT: Gauge Calculator -->
+        <div id="tab-content-gauge" class="tab-content active-content">
+          <p class="toolkit-intro">Calculate exactly how many stitches to cast on or rows to knit based on your swatch gauge.</p>
+          
+          <div class="gauge-form">
+            <div class="form-group-row">
+              <div class="form-group half">
+                <label>Swatch Stitches (sts)</label>
+                <input type="number" id="gauge-swatch-sts" value="20" min="1">
+              </div>
+              <div class="form-group half">
+                <label>Swatch Width (in/cm)</label>
+                <input type="number" id="gauge-swatch-w" value="4" min="1">
+              </div>
+            </div>
+            <div class="form-group-row">
+              <div class="form-group half">
+                <label>Swatch Rows</label>
+                <input type="number" id="gauge-swatch-rows" value="28" min="1">
+              </div>
+              <div class="form-group half">
+                <label>Swatch Height (in/cm)</label>
+                <input type="number" id="gauge-swatch-h" value="4" min="1">
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+              <label>Your Desired Dimensions</label>
+              <div class="form-group-row">
+                <div class="form-group half">
+                  <label for="gauge-target-w">Desired Width</label>
+                  <input type="number" id="gauge-target-w" placeholder="e.g. 20" value="10">
+                </div>
+                <div class="form-group half">
+                  <label for="gauge-target-h">Desired Height</label>
+                  <input type="number" id="gauge-target-h" placeholder="e.g. 60" value="15">
+                </div>
+              </div>
+            </div>
+
+            <button id="btn-calculate-gauge" class="btn btn-primary full-width">Calculate Requirement</button>
+
+            <div id="gauge-results" class="gauge-results-box hidden">
+              <h5>Your Stitch Prescription:</h5>
+              <div class="results-grid">
+                <div class="result-item">
+                  <span class="res-num" id="res-cast-on">50</span>
+                  <span class="res-lbl">Stitches to Cast On</span>
+                </div>
+                <div class="result-item">
+                  <span class="res-num" id="res-total-rows">105</span>
+                  <span class="res-lbl">Rows to Knit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB CONTENT: Stitch Dictionary -->
+        <div id="tab-content-dictionary" class="tab-content">
+          <div class="search-box">
+            <input type="text" id="stitch-search" placeholder="Search stitches (e.g. cable, moss)...">
+          </div>
+          
+          <div id="stitch-list" class="stitch-list">
+            <!-- Dynamic stitch cards -->
+          </div>
+        </div>
+
+        <!-- TAB CONTENT: Backup & Export -->
+        <div id="tab-content-backup" class="tab-content">
+          <p class="toolkit-intro">Export or import your knitting projects to transfer them to another device.</p>
+          
+          <div class="backup-section-box">
+            <h5>Export Projects</h5>
+            <p style="font-size: 0.8rem; margin-bottom: 12px; color: var(--color-text-muted);">Download all projects, counters, and patterns into a single backup JSON file.</p>
+            <button id="btn-export-backup" class="btn btn-primary full-width">Export backup.json</button>
+          </div>
+
+          <div class="backup-section-box" style="margin-top: 15px;">
+            <h5>Import Projects</h5>
+            <p style="font-size: 0.8rem; margin-bottom: 12px; color: var(--color-text-muted);">Restore your projects from a backup JSON file. Existing project conflicts will be updated.</p>
+            <input type="file" id="backup-file-input" accept=".json" class="hidden">
+            <button id="btn-import-backup" class="btn btn-secondary full-width">Upload Backup File</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="sample-pattern.js"></script>
+  <script src="pdf-viewer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
