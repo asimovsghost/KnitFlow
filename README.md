@@ -1,6 +1,6 @@
-# 🧶 KnitFlow
+# 🧶 PurlWise
 
-KnitFlow is a beautiful, local-first, interactive knitting pattern tracking application. Built with a warm, cozy terracotta theme, it is designed to help makers keep their place in complex cable charts, track active stitches/rows, and annotate patterns effortlessly.
+PurlWise is a beautiful, local-first, interactive knitting pattern tracking application. Built with a warm, cozy terracotta theme, it is designed to help makers keep their place in complex cable charts, track active stitches/rows, and annotate patterns effortlessly.
 
 The project is packaged for **Windows Desktop** (using Electron) and **Android Mobile** (using Capacitor).
 
