@@ -57,13 +57,13 @@ To build a standalone Windows application package:
 ```bash
 npm run package
 ```
-The compiled build will be generated under `dist/KnitFlow-win32-x64/`.
+The compiled build will be generated under `dist/PurlWise-win32-x64/`.
 
 ---
 
 ## 📱 Mobile Porting (Android)
 
-KnitFlow compiles into a native Android app using Capacitor. The mobile web assets are compiled inside `/www` to exclude desktop dependencies.
+PurlWise compiles into a native Android app using Capacitor. The mobile web assets are compiled inside `/www` to exclude desktop dependencies.
 
 To sync and build the Android package:
 1. Sync web assets:
