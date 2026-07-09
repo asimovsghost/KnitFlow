@@ -175,6 +175,57 @@ const DBManager = {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  },
+
+  async migrateFromLegacyKnitFlow() {
+    try {
+      // Check if PurlWiseDB already has projects, if so, skip migration
+      const currentProjects = await this.getAllProjects();
+      if (currentProjects.length > 0) return;
+
+      const legacyProjects = await new Promise((resolve, reject) => {
+        const req = indexedDB.open('KnitFlowDB', 1);
+        
+        req.onupgradeneeded = (e) => {
+          // KnitFlowDB doesn't exist, abort to avoid creating an empty DB
+          e.target.transaction.abort();
+          resolve([]);
+        };
+
+        req.onerror = (e) => {
+          resolve([]);
+        };
+
+        req.onsuccess = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('projects')) {
+            db.close();
+            resolve([]);
+            return;
+          }
+          const tx = db.transaction(['projects'], 'readonly');
+          const store = tx.objectStore('projects');
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => {
+            db.close();
+            resolve(getAllReq.result);
+          };
+          getAllReq.onerror = () => {
+            db.close();
+            reject(getAllReq.error);
+          };
+        };
+      });
+
+      if (legacyProjects && legacyProjects.length > 0) {
+        console.log(`Migrating ${legacyProjects.length} projects from KnitFlowDB to PurlWiseDB...`);
+        for (const proj of legacyProjects) {
+          await this.saveProject(proj);
+        }
+      }
+    } catch (e) {
+      console.warn('Legacy DB migration failed or not applicable', e);
+    }
   }
 };
 
@@ -263,6 +314,8 @@ const App = {
   isLineTrackerActive: false,
   isFocusModeActive: false,
   lastPageBeforeJump: null,
+  wakeLockEnabled: false,
+  wakeLockRef: null,
 
   // Temporary file hold during creation
   loadedFileData: null,
@@ -273,10 +326,12 @@ const App = {
     this.cacheDOM();
     this.bindEvents();
     this.initTheme();
+    this.initWakeLock();
     
     // Initialize DB & load projects
     try {
       await DBManager.init();
+      await DBManager.migrateFromLegacyKnitFlow();
       await this.loadAllProjectsFromDB();
     } catch (err) {
       alert('Could not initialize local database. App will run in memory-only mode.');
@@ -296,6 +351,14 @@ const App = {
       btnThemeToggle: document.getElementById('btn-theme-toggle'),
       themeSun: document.getElementById('theme-sun'),
       themeMoon: document.getElementById('theme-moon'),
+      btnWakelockToggle: document.getElementById('btn-wakelock-toggle'),
+      wakelockIconOn: document.getElementById('wakelock-icon-on'),
+      wakelockIconOff: document.getElementById('wakelock-icon-off'),
+      
+      btnFocusWakelockToggle: document.getElementById('btn-focus-wakelock-toggle'),
+      focusWakelockIconOn: document.getElementById('focus-wakelock-icon-on'),
+      focusWakelockIconOff: document.getElementById('focus-wakelock-icon-off'),
+
       btnSoundToggle: document.getElementById('btn-sound-toggle'),
       soundIconOn: document.getElementById('sound-icon-on'),
       soundIconOff: document.getElementById('sound-icon-off'),
@@ -425,6 +488,17 @@ const App = {
   bindEvents() {
     // Theme Toggle
     this.dom.btnThemeToggle.addEventListener('click', () => this.toggleTheme());
+    
+    // Wake Lock Toggle
+    if (this.dom.btnWakelockToggle) {
+      this.dom.btnWakelockToggle.addEventListener('click', () => this.toggleWakeLock());
+    }
+    if (this.dom.btnFocusWakelockToggle) {
+      this.dom.btnFocusWakelockToggle.addEventListener('click', () => this.toggleWakeLock());
+    }
+
+    // Wake Lock visibility change listener
+    document.addEventListener('visibilitychange', () => this.handleVisibilityChange());
     
     // Sound Toggle
     this.dom.btnSoundToggle.addEventListener('click', () => this.toggleSound());
@@ -597,6 +671,45 @@ const App = {
     this.dom.patternCanvas.addEventListener('dblclick', (e) => this.handleCanvasDoubleClick(e));
     this.dom.annotationsOverlay.addEventListener('dblclick', (e) => this.handleCanvasDoubleClick(e));
 
+    // Pinch-to-zoom logic for interactive container
+    let initialPinchDistance = null;
+    let initialZoomLevel = null;
+
+    this.dom.interactiveContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        // e.preventDefault(); // Don't prevent default on start, might interfere with standard interactions
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        initialPinchDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+        initialZoomLevel = this.zoomLevel;
+      }
+    }, { passive: false });
+
+    this.dom.interactiveContainer.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && initialPinchDistance !== null) {
+        e.preventDefault(); // Prevent standard browser zoom/scroll while pinching
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+        
+        const scale = currentDistance / initialPinchDistance;
+        let newZoomLevel = Math.round(initialZoomLevel * scale);
+        
+        newZoomLevel = Math.max(50, Math.min(500, newZoomLevel));
+        
+        if (newZoomLevel !== this.zoomLevel) {
+          this.adjustZoom(newZoomLevel - this.zoomLevel);
+        }
+      }
+    }, { passive: false });
+
+    this.dom.interactiveContainer.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        initialPinchDistance = null;
+        initialZoomLevel = null;
+      }
+    });
+
     // Toolbar settings within tracker line
     this.dom.trackerBtnOpacity.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -685,6 +798,62 @@ const App = {
     AudioSynth.soundEnabled = !AudioSynth.soundEnabled;
     this.dom.soundIconOn.classList.toggle('hidden', !AudioSynth.soundEnabled);
     this.dom.soundIconOff.classList.toggle('hidden', AudioSynth.soundEnabled);
+  },
+
+  async initWakeLock() {
+    const savedWakeLock = localStorage.getItem('purlwise-wakelock');
+    this.wakeLockEnabled = (savedWakeLock === 'true');
+    this.updateWakeLockUI();
+
+    if (this.wakeLockEnabled) {
+      await this.requestWakeLock();
+    }
+  },
+
+  updateWakeLockUI() {
+    if (this.dom.wakelockIconOn && this.dom.wakelockIconOff) {
+      this.dom.wakelockIconOn.classList.toggle('hidden', !this.wakeLockEnabled);
+      this.dom.wakelockIconOff.classList.toggle('hidden', this.wakeLockEnabled);
+    }
+    if (this.dom.focusWakelockIconOn && this.dom.focusWakelockIconOff) {
+      this.dom.focusWakelockIconOn.classList.toggle('hidden', !this.wakeLockEnabled);
+      this.dom.focusWakelockIconOff.classList.toggle('hidden', this.wakeLockEnabled);
+    }
+  },
+
+  async toggleWakeLock() {
+    this.wakeLockEnabled = !this.wakeLockEnabled;
+    localStorage.setItem('purlwise-wakelock', this.wakeLockEnabled);
+    this.updateWakeLockUI();
+
+    if (this.wakeLockEnabled) {
+      await this.requestWakeLock();
+    } else {
+      await this.releaseWakeLock();
+    }
+  },
+
+  async requestWakeLock() {
+    if ('wakeLock' in navigator) {
+      try {
+        this.wakeLockRef = await navigator.wakeLock.request('screen');
+      } catch (err) {
+        console.warn(`Wake Lock request failed: ${err.name}, ${err.message}`);
+      }
+    }
+  },
+
+  async releaseWakeLock() {
+    if (this.wakeLockRef !== null) {
+      await this.wakeLockRef.release();
+      this.wakeLockRef = null;
+    }
+  },
+
+  async handleVisibilityChange() {
+    if (this.wakeLockEnabled && document.visibilityState === 'visible') {
+      await this.requestWakeLock();
+    }
   },
 
   // ----------------------------------------------------
@@ -1225,39 +1394,136 @@ const App = {
     pinElement.classList.add('active');
 
     const editor = document.createElement('div');
-    editor.className = 'sticky-note-editor';
+    
     editor.innerHTML = `
-      <textarea placeholder="Type a note...">${note.text}</textarea>
+      <div class="editor-content" contenteditable="true" placeholder="Type a note...">${note.text || ''}</div>
       <div class="sticky-note-editor-footer">
         <button class="sticky-note-delete-btn">Delete</button>
-        <button class="sticky-note-save-btn">Save</button>
       </div>
     `;
 
     // Handle clicks inside editor without bubble trigger to pattern canvas
     editor.addEventListener('click', (e) => e.stopPropagation());
     editor.addEventListener('dblclick', (e) => e.stopPropagation());
+    editor.addEventListener('wheel', (e) => e.stopPropagation(), {passive: false});
+    editor.addEventListener('touchstart', (e) => e.stopPropagation(), {passive: false});
+    editor.addEventListener('touchmove', (e) => e.stopPropagation(), {passive: false});
 
-    const txtArea = editor.querySelector('textarea');
+    const txtArea = editor.querySelector('.editor-content');
     
-    // Save note trigger
-    editor.querySelector('.sticky-note-save-btn').addEventListener('click', () => {
-      note.text = txtArea.value.trim();
-      this.saveActiveProjectState();
-      this.renderNotesOnOverlay();
-      this.renderNotesLog();
-    });
-
     // Delete note trigger
     editor.querySelector('.sticky-note-delete-btn').addEventListener('click', () => {
       this.activeProject.notes = this.activeProject.notes.filter(n => n.id !== note.id);
       this.saveActiveProjectState();
       this.renderNotesOnOverlay();
       this.renderNotesLog();
+      editor.remove();
     });
 
-    pinElement.appendChild(editor);
+    document.body.appendChild(editor);
+
+    // Position based on pin bounding rect
+    const pinRect = pinElement.getBoundingClientRect();
+    const isTopHalf = pinRect.top < window.innerHeight / 2;
+    const isLeftHalf = pinRect.left < window.innerWidth / 2;
+
+    let tailClass = '';
+    if (isTopHalf && isLeftHalf) tailClass = 'bubble-tail-top-left';
+    if (isTopHalf && !isLeftHalf) tailClass = 'bubble-tail-top-right';
+    if (!isTopHalf && isLeftHalf) tailClass = 'bubble-tail-bottom-left';
+    if (!isTopHalf && !isLeftHalf) tailClass = 'bubble-tail-bottom-right';
+
+    editor.className = `sticky-note-editor ${tailClass}`;
+
+    // Temporarily render invisible to get dimensions
+    editor.style.visibility = 'hidden';
+    const gap = 15;
+    let topPos = 0;
+    let leftPos = 0;
+
+    const positionEditor = () => {
+      const editorRect = editor.getBoundingClientRect();
+      
+      if (isTopHalf) {
+        topPos = pinRect.bottom + gap;
+      } else {
+        topPos = pinRect.top - editorRect.height - gap;
+      }
+
+      if (isLeftHalf) {
+        leftPos = pinRect.left + (pinRect.width / 2) - 30; // tail is 20px from left + 10px buffer
+      } else {
+        leftPos = pinRect.right - (pinRect.width / 2) - editorRect.width + 30; // tail is 20px from right
+      }
+
+      // Clamp to screen
+      leftPos = Math.max(10, Math.min(leftPos, window.innerWidth - editorRect.width - 10));
+      topPos = Math.max(10, Math.min(topPos, window.innerHeight - editorRect.height - 10));
+
+      editor.style.top = `${topPos}px`;
+      editor.style.left = `${leftPos}px`;
+    };
+
+    positionEditor();
+    editor.style.visibility = 'visible';
+
+    // Observe size changes as user types
+    const resizeObserver = new ResizeObserver(() => {
+      positionEditor();
+    });
+    resizeObserver.observe(editor);
+
+    // Clean up observer if editor is removed
+    const cleanupObserver = new MutationObserver((mutations) => {
+      if (!document.body.contains(editor)) {
+        resizeObserver.disconnect();
+        cleanupObserver.disconnect();
+      }
+    });
+    cleanupObserver.observe(document.body, { childList: true, subtree: true });
+
+    // Place cursor at the end
     txtArea.focus();
+    if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined" && txtArea.childNodes.length > 0) {
+      const range = document.createRange();
+      range.selectNodeContents(txtArea);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Add class to body to hide bottom bar
+    document.body.classList.add('note-editor-open');
+
+    // Close on outside click
+    const outsideClickListener = (e) => {
+      // If clicked inside the editor or on a pin, ignore
+      if (editor.contains(e.target) || e.target.closest('.sticky-note-pin')) {
+        return;
+      }
+      
+      // Save and close
+      note.text = txtArea.innerText.trim();
+      this.saveActiveProjectState();
+      this.renderNotesOnOverlay();
+      this.renderNotesLog();
+      
+      editor.remove();
+      document.body.classList.remove('note-editor-open');
+      document.removeEventListener('pointerdown', outsideClickListener);
+    };
+
+    // Use pointerdown to catch taps before they turn into full clicks, bypassing canvas issues
+    setTimeout(() => {
+      document.addEventListener('pointerdown', outsideClickListener);
+    }, 10);
+
+    // Override the delete button to also clean up the listener
+    editor.querySelector('.sticky-note-delete-btn').addEventListener('click', () => {
+      document.body.classList.remove('note-editor-open');
+      document.removeEventListener('pointerdown', outsideClickListener);
+    });
   },
 
   renderNotesLog() {
@@ -2025,8 +2291,8 @@ const App = {
     reader.onload = async (event) => {
       try {
         const backup = JSON.parse(event.target.result);
-        if (backup.app !== 'PurlWise' || !Array.isArray(backup.projects)) {
-          await Dialogs.alert('Invalid backup file. Make sure you upload a .json file exported from PurlWise.');
+        if ((backup.app !== 'PurlWise' && backup.app !== 'KnitFlow') || !Array.isArray(backup.projects)) {
+          await Dialogs.alert('Invalid backup file. Make sure you upload a .json file exported from PurlWise or KnitFlow.');
           return;
         }
         

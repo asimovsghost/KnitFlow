@@ -18,19 +18,29 @@
   "devDependencies": {
     "electron": "^25.3.0",
     "electron-builder": "^26.15.3",
-    "electron-packager": "^17.1.1"
-  },
-  "dependencies": {
+    "electron-packager": "^17.1.1",
     "@capacitor/android": "^8.4.1",
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1"
   },
+  "dependencies": {},
   "build": {
     "appId": "com.purlwise.desktop",
     "productName": "PurlWise",
     "directories": {
       "output": "dist-installer"
     },
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "pdf-viewer.js",
+      "sample-pattern.js",
+      "main.js",
+      "preload.js",
+      "fonts/**/*",
+      "lib/**/*"
+    ],
     "win": {
       "target": "nsis"
     },

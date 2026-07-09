@@ -124,6 +124,7 @@ body {
   transition: background-color var(--transition-normal), color var(--transition-normal);
   overflow: hidden;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
 }
 
@@ -317,8 +318,12 @@ p {
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .app-header {
@@ -1013,34 +1018,92 @@ p {
   z-index: 10;
 }
 
-/* Custom interactive note box */
+/* Liquid Glass Speech Bubble Editor */
 .sticky-note-editor {
   position: absolute;
-  top: 30px;
-  left: 0;
-  width: 220px;
-  background: #fffac9; /* Post-it paper color */
-  border: 1px solid #e1d382;
-  box-shadow: 4px 6px 20px rgba(0,0,0,0.12);
-  padding: 12px;
-  border-radius: var(--radius-sm);
-  z-index: 15;
-  transform: rotate(45deg); /* Neutralize pin rotation */
-  transform-origin: top left;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px rgba(62, 51, 44, 0.15);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  z-index: 200;
   pointer-events: auto;
+  min-width: 120px;
+  max-width: 250px;
+  /* Grow smoothly */
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  transform-origin: center center;
 }
 
-.sticky-note-editor textarea {
+/* Base tail setup */
+.sticky-note-editor::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 2px 2px 4px rgba(62, 51, 44, 0.05);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Tail directional variants */
+.bubble-tail-top-left::after {
+  top: -8px;
+  left: 20px;
+  transform: rotate(45deg);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.bubble-tail-top-right::after {
+  top: -8px;
+  right: 20px;
+  transform: rotate(45deg);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.bubble-tail-bottom-left::after {
+  bottom: -8px;
+  left: 20px;
+  transform: rotate(45deg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  border-right: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.bubble-tail-bottom-right::after {
+  bottom: -8px;
+  right: 20px;
+  transform: rotate(45deg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  border-right: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.sticky-note-editor .editor-content {
   width: 100%;
-  height: 70px;
+  min-height: 24px;
   border: none;
   background: transparent;
-  resize: none;
   outline: none;
   font-family: var(--font-sans);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: #332d18;
-  line-height: 1.4;
+  line-height: 1.5;
+  cursor: text;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.sticky-note-editor .editor-content[placeholder]:empty:before {
+  content: attr(placeholder);
+  color: #8c7b70;
+  pointer-events: none;
+  display: block;
 }
 
 .sticky-note-editor-footer {
@@ -1053,28 +1116,14 @@ p {
 .sticky-note-delete-btn {
   background: none;
   border: none;
-  color: #a4923e;
+  color: rgba(164, 146, 62, 0.8);
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 500;
   transition: color var(--transition-fast);
 }
 .sticky-note-delete-btn:hover {
   color: var(--color-danger);
-}
-
-.sticky-note-save-btn {
-  background: #efdf7a;
-  border: 1px solid #dcd084;
-  color: #3c3514;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.sticky-note-save-btn:hover {
-  background: #e7d566;
 }
 
 
@@ -2022,13 +2071,13 @@ body.focus-mode-active .workspace-sidebar {
 
 body.focus-mode-active .workspace-layout {
   flex-direction: row !important;
-  height: 100vh !important;
+  height: 100% !important;
   overflow: hidden !important;
 }
 
 body.focus-mode-active .workspace-viewport {
   height: 100% !important;
-  min-height: 100vh !important;
+  min-height: 100% !important;
   width: 100% !important;
   flex-grow: 1 !important;
   border-bottom: none !important;
@@ -2531,7 +2580,8 @@ body.dark-mode .focus-bottom-bar {
   box-shadow: 0 -4px 30px rgba(0,0,0,0.5);
 }
 
-.focus-bottom-bar.hidden {
+.focus-bottom-bar.hidden,
+body.note-editor-open .focus-bottom-bar {
   display: flex !important;
   transform: translateY(100%);
   pointer-events: none;
