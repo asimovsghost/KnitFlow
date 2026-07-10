@@ -88,7 +88,12 @@
           </div>
         </div>
 
-        <div class="projects-section">
+        <div class="dashboard-tabs">
+          <button id="tab-dashboard-projects" class="dashboard-tab active">My Projects</button>
+          <button id="tab-dashboard-stash" class="dashboard-tab">My Stash</button>
+        </div>
+
+        <div id="dashboard-projects-section" class="projects-section active-section">
           <h2>Your Knitting Projects</h2>
           <div id="projects-grid" class="projects-grid">
             <!-- Dynamic project cards go here -->
@@ -101,6 +106,27 @@
             <p>Start by scanning a pattern or load our pre-made cozy autumn scarf to test out PurlWise.</p>
             <button id="btn-quickstart" class="btn btn-secondary" style="margin-top: 15px;">
               Load Sample Pattern
+            </button>
+          </div>
+        </div>
+
+        <div id="dashboard-stash-section" class="stash-section hidden">
+          <div class="stash-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2>Your Yarn Stash</h2>
+            <button id="btn-add-stash" class="btn btn-primary">+ Add Yarn</button>
+          </div>
+          <div id="stash-grid" class="projects-grid stash-grid">
+            <!-- Dynamic stash cards go here -->
+          </div>
+          <div id="stash-empty-state" class="empty-state hidden">
+            <svg viewBox="0 0 24 24" width="60" height="60" stroke="var(--color-border)" stroke-width="1.5" fill="none">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M7 12 C 7 8, 17 8, 17 12" />
+            </svg>
+            <h3>Your stash is empty</h3>
+            <p>Keep track of your yarn inventory by adding your first skein.</p>
+            <button id="btn-quick-add-stash" class="btn btn-secondary" style="margin-top: 15px;">
+              Add Yarn
             </button>
           </div>
         </div>
@@ -144,6 +170,17 @@
               <div id="notes-log-container" class="notes-log-container">
                 <!-- Notes will list here -->
                 <p class="empty-notes-text">No notes yet. Double-click the pattern or click "+ Add" to place an interactive note!</p>
+              </div>
+            </div>
+
+            <!-- Project Yarn -->
+            <div class="sidebar-block project-yarn-block">
+              <div class="block-header">
+                <h4>Project Yarn</h4>
+                <button id="btn-allocate-yarn" class="btn btn-text-only">+ Allocate</button>
+              </div>
+              <div id="project-yarn-list" class="project-yarn-list">
+                <p class="empty-notes-text">No yarn allocated to this project yet.</p>
               </div>
             </div>
 
@@ -439,6 +476,151 @@
     </div>
   </div>
 
+  <!-- STASH WIZARD MODAL -->
+  <div id="modal-stash-wizard" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="stash-wizard-title">Add Yarn to Stash</h3>
+        <button id="btn-close-stash-modal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="wizard-progress">
+        <div class="wizard-step-indicator active" id="wizard-ind-1">1</div>
+        <div class="wizard-line"></div>
+        <div class="wizard-step-indicator" id="wizard-ind-2">2</div>
+        <div class="wizard-line"></div>
+        <div class="wizard-step-indicator" id="wizard-ind-3">3</div>
+      </div>
+      <form id="stash-form">
+        <!-- Step 1: Basics -->
+        <div id="wizard-step-1" class="wizard-step active">
+          <div class="form-group position-relative">
+            <label for="stash-brand">Brand / Maker</label>
+            <input type="text" id="stash-brand" placeholder="e.g., Malabrigo" required autocomplete="off">
+            <ul id="autocomplete-brand" class="autocomplete-dropdown hidden"></ul>
+          </div>
+          <div class="form-group position-relative">
+            <label for="stash-name">Yarn Name</label>
+            <input type="text" id="stash-name" placeholder="e.g., Rios" required autocomplete="off">
+            <ul id="autocomplete-name" class="autocomplete-dropdown hidden"></ul>
+          </div>
+          <div class="form-group-row">
+            <div class="form-group half">
+              <label for="stash-colorway">Colorway</label>
+              <input type="text" id="stash-colorway" placeholder="e.g., Plomo" required autocomplete="off">
+            </div>
+            <div class="form-group half">
+              <label for="stash-colorhex">Color Swatch</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="color" id="stash-colorhex" value="#8B8C89" style="height: 38px; width: 40px; padding: 0; border: none; cursor: pointer;">
+                <input type="text" id="stash-colorhex-text" value="#8B8C89" style="flex-grow: 1;" readonly>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Specs -->
+        <div id="wizard-step-2" class="wizard-step hidden">
+          <div class="form-group-row">
+            <div class="form-group half">
+              <label for="stash-weight">Weight</label>
+              <select id="stash-weight">
+                <option value="Lace">Lace</option>
+                <option value="Fingering">Fingering / Sock</option>
+                <option value="Sport">Sport</option>
+                <option value="DK">DK</option>
+                <option value="Worsted" selected>Worsted</option>
+                <option value="Aran">Aran</option>
+                <option value="Bulky">Bulky</option>
+                <option value="Super Bulky">Super Bulky</option>
+              </select>
+            </div>
+            <div class="form-group half">
+              <label for="stash-dyelot">Dye Lot</label>
+              <input type="text" id="stash-dyelot" placeholder="e.g., 412" autocomplete="off">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="stash-fibers">Fibers</label>
+            <input type="text" id="stash-fibers" placeholder="e.g., 100% Merino Wool" autocomplete="off">
+          </div>
+          <div class="form-group-row">
+            <div class="form-group half">
+              <label for="stash-skein-weight">Skein Weight (g)</label>
+              <input type="number" id="stash-skein-weight" placeholder="e.g., 50" min="0" step="any">
+            </div>
+            <div class="form-group half">
+              <label for="stash-skein-length">Skein Length (m)</label>
+              <input type="number" id="stash-skein-length" placeholder="e.g., 150" min="0" step="any">
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Inventory -->
+        <div id="wizard-step-3" class="wizard-step hidden">
+          <div class="form-group-row">
+            <div class="form-group half">
+              <label for="stash-quantity-skeins">Number of Skeins</label>
+              <input type="number" id="stash-quantity-skeins" placeholder="e.g., 5" min="0" step="any" required>
+            </div>
+            <div class="form-group half">
+              <label for="stash-quantity-weight">Total Weighed Weight (g)</label>
+              <input type="number" id="stash-quantity-weight" placeholder="Optional, e.g., 220" min="0" step="any">
+            </div>
+          </div>
+          <div class="form-group position-relative">
+            <label for="stash-location">Storage Location</label>
+            <input type="text" id="stash-location" placeholder="e.g., Blue Bin" autocomplete="off">
+            <ul id="autocomplete-location" class="autocomplete-dropdown hidden"></ul>
+          </div>
+          <div class="form-group">
+            <label for="stash-notes">Notes</label>
+            <textarea id="stash-notes" placeholder="Any extra details..." rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="justify-content: space-between;">
+          <button type="button" id="btn-stash-prev" class="btn btn-secondary hidden">Back</button>
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            <button type="button" id="btn-cancel-stash" class="btn btn-secondary">Cancel</button>
+            <button type="button" id="btn-stash-next" class="btn btn-primary">Next</button>
+            <button type="submit" id="btn-save-stash" class="btn btn-primary hidden">Save Yarn</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ALLOCATE YARN MODAL -->
+  <div id="modal-allocate-yarn" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Allocate Yarn from Stash</h3>
+        <button id="btn-close-allocate-modal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="allocate-yarn-select">Select Yarn</label>
+        <select id="allocate-yarn-select">
+          <!-- Dynamic -->
+        </select>
+      </div>
+      <div class="form-group-row" id="allocate-inputs-row">
+        <div class="form-group half" id="allocate-skeins-group">
+          <label for="allocate-skeins">Quantity in Skeins</label>
+          <input type="number" id="allocate-skeins" placeholder="e.g., 2" min="0.1" step="any">
+        </div>
+        <div class="form-group half" id="allocate-weight-group">
+          <label for="allocate-quantity">Weight to Reserve (g)</label>
+          <input type="number" id="allocate-quantity" placeholder="e.g., 100" min="0.1" step="any">
+        </div>
+      </div>
+      <small id="allocate-max-hint" style="color: var(--color-text-muted); display: block; margin-top: 4px;">Available: 1</small>
+      <div class="modal-footer">
+        <button type="button" id="btn-cancel-allocate" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btn-save-allocate" class="btn btn-primary">Allocate</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TOOLKIT DRAWER -->
   <div id="toolkit-drawer" class="drawer-overlay">
     <div class="drawer-card">
@@ -552,5 +734,6 @@
   <script src="sample-pattern.js"></script>
   <script src="pdf-viewer.js"></script>
   <script src="app.js"></script>
+  <script src="stash-manager.js"></script>
 </body>
 </html>

@@ -118,7 +118,7 @@ const Dialogs = {
 // ----------------------------------------------------
 const DBManager = {
   dbName: 'PurlWiseDB',
-  dbVersion: 1,
+  dbVersion: 2,
   db: null,
 
   init() {
@@ -139,6 +139,9 @@ const DBManager = {
         const db = event.target.result;
         if (!db.objectStoreNames.contains('projects')) {
           db.createObjectStore('projects', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('stash')) {
+          db.createObjectStore('stash', { keyPath: 'id' });
         }
       };
     });
@@ -170,6 +173,39 @@ const DBManager = {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['projects'], 'readwrite');
       const store = transaction.objectStore('projects');
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  getAllStash() {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['stash'], 'readonly');
+      const store = transaction.objectStore('stash');
+      const request = store.getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  saveStash(stashItem) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['stash'], 'readwrite');
+      const store = transaction.objectStore('stash');
+      const request = store.put(stashItem);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  deleteStash(id) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['stash'], 'readwrite');
+      const store = transaction.objectStore('stash');
       const request = store.delete(id);
 
       request.onsuccess = () => resolve();
@@ -932,7 +968,8 @@ const App = {
               <button class="btn-card-menu btn btn-icon-only small" aria-label="Options" style="background: none; border: none; color: var(--color-text-light); padding: 4px;">
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
               </button>
-              <div class="project-card-dropdown hidden" style="position: absolute; right: 0; top: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 100; min-width: 120px; overflow: hidden;">
+              <div class="project-card-dropdown hidden" style="position: absolute; right: 0; top: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 100; min-width: 140px; overflow: hidden; display: flex; flex-direction: column;">
+                <button class="btn-allocate-project-card" style="width: 100%; padding: 10px 16px; text-align: left; background: none; border: none; color: var(--color-text-main); cursor: pointer; font-size: 0.9rem; transition: background 0.2s; border-bottom: 1px solid var(--color-border);">Allocate Yarn</button>
                 <button class="btn-delete-project-card" style="width: 100%; padding: 10px 16px; text-align: left; background: none; border: none; color: var(--color-danger); cursor: pointer; font-size: 0.9rem; transition: background 0.2s;">Delete Project</button>
               </div>
             </div>
@@ -944,6 +981,32 @@ const App = {
             <span class="progress-text-label">Row ${project.currentRow} of ${project.targetRows}</span>
             <span class="progress-text-percent">${pct}%</span>
           </div>
+          
+          <!-- Assigned Yarns badge section -->
+          ${(() => {
+            if (window.StashManager && window.StashManager.stash) {
+              const projectYarns = window.StashManager.stash.filter(y => 
+                y.allocations && y.allocations.some(a => a.projectId === project.id)
+              );
+              if (projectYarns.length > 0) {
+                return `
+                  <div class="project-card-yarns">
+                    ${projectYarns.map(yarn => {
+                      const allocText = window.StashManager.formatAllocation(yarn, project.id);
+                      return `
+                        <div class="project-card-yarn-badge">
+                          <span class="color-dot" style="background-color: ${yarn.colorHex || '#ddd'}"></span>
+                          <span class="yarn-badge-name" style="font-weight:500;">${yarn.brand} ${yarn.name}</span>
+                          <span class="yarn-badge-qty" style="margin-left:auto; font-weight:600;">${allocText}</span>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                `;
+              }
+            }
+            return '';
+          })()}
         </div>
         <div class="project-card-footer">
           <span>Stitches: ${project.currentStitch}</span>
@@ -962,6 +1025,7 @@ const App = {
       const menuBtn = card.querySelector('.btn-card-menu');
       const dropdown = card.querySelector('.project-card-dropdown');
       const delBtn = card.querySelector('.btn-delete-project-card');
+      const allocProjectBtn = card.querySelector('.btn-allocate-project-card');
 
       menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -970,6 +1034,14 @@ const App = {
           if (d !== dropdown) d.classList.add('hidden');
         });
         dropdown.classList.toggle('hidden');
+      });
+
+      allocProjectBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.add('hidden');
+        if (window.StashManager) {
+          window.StashManager.openAllocateModal(project.id);
+        }
       });
 
       delBtn.addEventListener('click', async (e) => {
@@ -1022,6 +1094,11 @@ const App = {
     // Restore counters values
     this.updateCounterUI();
     this.renderSubcounters();
+    
+    // Refresh allocated yarn panel
+    if (window.StashManager) {
+      window.StashManager.refreshProjectYarnPanel(projectId);
+    }
     this.renderNotesLog();
 
     // Restore bookmarks states
@@ -2260,11 +2337,13 @@ const App = {
   async exportBackup() {
     try {
       const projects = await DBManager.getAllProjects();
+      const stash = await DBManager.getAllStash();
       const backupData = {
         app: 'PurlWise',
         version: '1.0.0',
         exportedAt: new Date().toISOString(),
-        projects: projects
+        projects: projects,
+        stash: stash
       };
       
       const jsonString = JSON.stringify(backupData, null, 2);
@@ -2279,7 +2358,7 @@ const App = {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (err) {
-      await Dialogs.alert('Failed to export projects: ' + err.message);
+      await Dialogs.alert('Failed to export backup: ' + err.message);
     }
   },
 
@@ -2291,31 +2370,48 @@ const App = {
     reader.onload = async (event) => {
       try {
         const backup = JSON.parse(event.target.result);
-        if ((backup.app !== 'PurlWise' && backup.app !== 'KnitFlow') || !Array.isArray(backup.projects)) {
+        if (backup.app !== 'PurlWise' && backup.app !== 'KnitFlow') {
           await Dialogs.alert('Invalid backup file. Make sure you upload a .json file exported from PurlWise or KnitFlow.');
           return;
         }
         
-        const count = backup.projects.length;
-        const confirmMerge = await Dialogs.confirm(`Are you sure you want to import ${count} projects? This will merge them with your current project list.`);
+        const projects = backup.projects || [];
+        const stash = backup.stash || [];
+        const projectCount = projects.length;
+        const stashCount = stash.length;
+        
+        const confirmMsg = `Are you sure you want to import ${projectCount} projects and ${stashCount} yarn stash items? This will merge them with your current data.`;
+        const confirmMerge = await Dialogs.confirm(confirmMsg);
         if (!confirmMerge) {
           this.dom.backupFileInput.value = '';
           return;
         }
         
-        // Save each project into DB
-        for (const project of backup.projects) {
+        // Save projects
+        for (const project of projects) {
           if (project.id && project.title) {
             await DBManager.saveProject(project);
           }
         }
+
+        // Save stash items
+        for (const yarn of stash) {
+          if (yarn.id && yarn.brand && yarn.name) {
+            await DBManager.saveStash(yarn);
+          }
+        }
         
-        await Dialogs.alert(`Successfully imported ${count} projects!`);
+        await Dialogs.alert(`Successfully imported ${projectCount} projects and ${stashCount} yarn stash items!`);
         this.dom.backupFileInput.value = '';
         
-        // Reload and display projects
+        // Reload projects list
         await this.loadAllProjectsFromDB();
         this.renderProjectsGrid();
+        
+        // Reload stash list if StashManager is loaded
+        if (window.StashManager && typeof window.StashManager.loadStash === 'function') {
+          await window.StashManager.loadStash();
+        }
         
       } catch (err) {
         await Dialogs.alert('Error parsing backup file: ' + err.message);
@@ -2364,4 +2460,8 @@ const App = {
 };
 
 // Initialize App
+window.Dialogs = Dialogs;
+window.DBManager = DBManager;
+window.App = App;
+
 window.addEventListener('DOMContentLoaded', () => App.init());

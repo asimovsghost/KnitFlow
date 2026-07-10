@@ -34,6 +34,7 @@
       "index.html",
       "style.css",
       "app.js",
+      "stash-manager.js",
       "pdf-viewer.js",
       "sample-pattern.js",
       "main.js",
