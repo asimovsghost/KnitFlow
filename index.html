@@ -129,6 +129,16 @@
               <button id="btn-add-stash" class="btn btn-primary">+ Add Yarn</button>
             </div>
           </div>
+          <div id="stash-stats-banner" class="hidden" style="display: flex; gap: 30px; background: var(--color-bg-secondary); padding: 12px 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border);">
+            <div style="display: flex; flex-direction: column;">
+              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Weight</span>
+              <span id="stash-stat-weight" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0g</span>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Length</span>
+              <span id="stash-stat-length" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0m</span>
+            </div>
+          </div>
           <div id="stash-grid" class="projects-grid stash-grid">
             <!-- Dynamic stash cards go here -->
           </div>

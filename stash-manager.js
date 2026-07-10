@@ -24,6 +24,9 @@ const StashManager = {
       // Stash Grid
       stashGrid: document.getElementById('stash-grid'),
       stashEmptyState: document.getElementById('stash-empty-state'),
+      stashStatsBanner: document.getElementById('stash-stats-banner'),
+      stashStatWeight: document.getElementById('stash-stat-weight'),
+      stashStatLength: document.getElementById('stash-stat-length'),
       btnAddStash: document.getElementById('btn-add-stash'),
       btnQuickAddStash: document.getElementById('btn-quick-add-stash'),
       
@@ -192,11 +195,33 @@ const StashManager = {
     if (this.stash.length === 0) {
       this.dom.stashGrid.classList.add('hidden');
       this.dom.stashEmptyState.classList.remove('hidden');
+      if (this.dom.stashStatsBanner) this.dom.stashStatsBanner.classList.add('hidden');
       return;
     }
 
     this.dom.stashGrid.classList.remove('hidden');
     this.dom.stashEmptyState.classList.add('hidden');
+    if (this.dom.stashStatsBanner) this.dom.stashStatsBanner.classList.remove('hidden');
+
+    let totalWeightGrams = 0;
+    let totalLengthMeters = 0;
+    
+    this.stash.forEach(yarn => {
+      const avail = yarn.quantityAvailable || 0;
+      if (avail <= 0) return;
+      
+      if (yarn.unitType === 'g') {
+        totalWeightGrams += avail;
+        const metersPerG = yarn.metersPerGram || (yarn.skeinLength && yarn.skeinWeight ? (yarn.skeinLength / yarn.skeinWeight) : 0);
+        if (metersPerG) totalLengthMeters += (avail * metersPerG);
+      } else {
+        if (yarn.skeinWeight) totalWeightGrams += (avail * yarn.skeinWeight);
+        if (yarn.skeinLength) totalLengthMeters += (avail * yarn.skeinLength);
+      }
+    });
+    
+    if (this.dom.stashStatWeight) this.dom.stashStatWeight.textContent = `${Math.round(totalWeightGrams).toLocaleString()}g`;
+    if (this.dom.stashStatLength) this.dom.stashStatLength.textContent = `${Math.round(totalLengthMeters).toLocaleString()}m`;
 
     const sortPref = localStorage.getItem('stashSortPreference') || 'brand_asc';
     const weightOrder = ['Lace', 'Fingering', 'Sport', 'DK', 'Worsted', 'Aran', 'Bulky', 'Super Bulky'];
