@@ -27,6 +27,8 @@ const StashManager = {
       stashStatsBanner: document.getElementById('stash-stats-banner'),
       stashStatWeight: document.getElementById('stash-stat-weight'),
       stashStatLength: document.getElementById('stash-stat-length'),
+      stashStatBrand: document.getElementById('stash-stat-brand'),
+      stashStatPalette: document.getElementById('stash-stat-palette'),
       btnAddStash: document.getElementById('btn-add-stash'),
       btnQuickAddStash: document.getElementById('btn-quick-add-stash'),
       
@@ -61,6 +63,7 @@ const StashManager = {
       fColorway: document.getElementById('stash-colorway'),
       fColorHex: document.getElementById('stash-colorhex'),
       fColorHexText: document.getElementById('stash-colorhex-text'),
+      fColorPreviewThread: document.getElementById('stash-color-preview-thread'),
       fWeight: document.getElementById('stash-weight'),
       fDyeLot: document.getElementById('stash-dyelot'),
       fFibers: document.getElementById('stash-fibers'),
@@ -121,6 +124,9 @@ const StashManager = {
     if(this.dom.fColorHex) {
       this.dom.fColorHex.addEventListener('input', (e) => {
         this.dom.fColorHexText.value = e.target.value.toUpperCase();
+        if(this.dom.fColorPreviewThread) {
+          this.dom.fColorPreviewThread.style.backgroundColor = e.target.value;
+        }
       });
     }
 
@@ -205,23 +211,93 @@ const StashManager = {
 
     let totalWeightGrams = 0;
     let totalLengthMeters = 0;
+    const brandCounts = {};
+    const colorCounts = {};
     
     this.stash.forEach(yarn => {
       const avail = yarn.quantityAvailable || 0;
       if (avail <= 0) return;
       
+      let skeins = 0;
+      let grams = 0;
+      
       if (yarn.unitType === 'g') {
-        totalWeightGrams += avail;
+        grams = avail;
+        skeins = yarn.skeinWeight ? (avail / yarn.skeinWeight) : 0;
+        
         const metersPerG = yarn.metersPerGram || (yarn.skeinLength && yarn.skeinWeight ? (yarn.skeinLength / yarn.skeinWeight) : 0);
         if (metersPerG) totalLengthMeters += (avail * metersPerG);
       } else {
-        if (yarn.skeinWeight) totalWeightGrams += (avail * yarn.skeinWeight);
+        skeins = avail;
+        grams = yarn.skeinWeight ? (avail * yarn.skeinWeight) : 0;
+        
         if (yarn.skeinLength) totalLengthMeters += (avail * yarn.skeinLength);
       }
+      
+      totalWeightGrams += grams;
+
+      // Brand aggregation
+      const brand = yarn.brand ? yarn.brand.trim() : 'Unknown';
+      if (!brandCounts[brand]) brandCounts[brand] = 0;
+      brandCounts[brand] += skeins;
+      
+      // Color aggregation
+      const hex = yarn.colorHex || '#dddddd';
+      if (!colorCounts[hex]) colorCounts[hex] = 0;
+      colorCounts[hex] += grams; // use weight for color proportion
     });
+
+    let topBrand = '-';
+    let topBrandSkeins = 0;
+    for (const b in brandCounts) {
+      if (brandCounts[b] > topBrandSkeins && b !== 'Unknown') {
+        topBrand = b;
+        topBrandSkeins = brandCounts[b];
+      }
+    }
+    
+    let gradientStops = [];
+    let currentPercent = 0;
+    const totalColorGrams = Object.values(colorCounts).reduce((sum, val) => sum + val, 0);
+    
+    if (totalColorGrams > 0) {
+      const sortedColors = Object.keys(colorCounts).sort((a, b) => colorCounts[b] - colorCounts[a]);
+      for (let i = 0; i < sortedColors.length; i++) {
+        const hex = sortedColors[i];
+        const percent = (colorCounts[hex] / totalColorGrams) * 100;
+        
+        const isFirst = i === 0;
+        const isLast = i === sortedColors.length - 1;
+        
+        // 4% blend area between colors (2% on each side of the boundary)
+        const leftBlend = isFirst ? 0 : 2;
+        const rightBlend = isLast ? 0 : 2;
+        
+        let startSolid = currentPercent + leftBlend;
+        let endSolid = currentPercent + percent - rightBlend;
+        
+        if (startSolid >= endSolid) {
+          // Slice is too thin for full blend margins, collapse to center point
+          const center = currentPercent + (percent / 2);
+          gradientStops.push(`${hex} ${center}%`);
+        } else {
+          gradientStops.push(`${hex} ${startSolid}% ${endSolid}%`);
+        }
+        
+        currentPercent += percent;
+      }
+    }
     
     if (this.dom.stashStatWeight) this.dom.stashStatWeight.textContent = `${Math.round(totalWeightGrams).toLocaleString()}g`;
     if (this.dom.stashStatLength) this.dom.stashStatLength.textContent = `${Math.round(totalLengthMeters).toLocaleString()}m`;
+    if (this.dom.stashStatBrand) this.dom.stashStatBrand.textContent = topBrand !== '-' ? `${topBrand} (~${Math.round(topBrandSkeins)} sk)` : '-';
+    if (this.dom.stashStatPalette) {
+      if (gradientStops.length > 0) {
+        this.dom.stashStatPalette.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+      } else {
+        this.dom.stashStatPalette.style.background = '#ddd';
+      }
+    }
 
     const sortPref = localStorage.getItem('stashSortPreference') || 'brand_asc';
     const weightOrder = ['Lace', 'Fingering', 'Sport', 'DK', 'Worsted', 'Aran', 'Bulky', 'Super Bulky'];
@@ -351,6 +427,7 @@ const StashManager = {
     // Clear custom color
     this.dom.fColorHex.value = '#8B8C89';
     this.dom.fColorHexText.value = '#8B8C89';
+    if(this.dom.fColorPreviewThread) this.dom.fColorPreviewThread.style.backgroundColor = '#8B8C89';
     
     if (yarn) {
       this.dom.fBrand.value = yarn.brand || '';
@@ -358,6 +435,7 @@ const StashManager = {
       this.dom.fColorway.value = yarn.colorway || '';
       this.dom.fColorHex.value = yarn.colorHex || '#8B8C89';
       this.dom.fColorHexText.value = yarn.colorHex || '#8B8C89';
+      if(this.dom.fColorPreviewThread) this.dom.fColorPreviewThread.style.backgroundColor = yarn.colorHex || '#8B8C89';
       this.dom.fWeight.value = yarn.weight || 'Worsted';
       this.dom.fDyeLot.value = yarn.dyeLot || '';
       this.dom.fFibers.value = yarn.fibers || '';

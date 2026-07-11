@@ -129,14 +129,25 @@
               <button id="btn-add-stash" class="btn btn-primary">+ Add Yarn</button>
             </div>
           </div>
-          <div id="stash-stats-banner" class="hidden" style="display: flex; gap: 30px; background: var(--color-bg-secondary); padding: 12px 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border);">
-            <div style="display: flex; flex-direction: column;">
-              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Weight</span>
-              <span id="stash-stat-weight" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0g</span>
+          <div id="stash-stats-banner" class="hidden" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 30px; background: var(--color-bg-secondary); padding: 12px 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border);">
+            <div style="display: flex; flex-wrap: wrap; gap: 30px;">
+              <div style="display: flex; flex-direction: column;">
+                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Weight</span>
+                <span id="stash-stat-weight" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0g</span>
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Length</span>
+                <span id="stash-stat-length" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0m</span>
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Top Brand (by Skeins)</span>
+                <span id="stash-stat-brand" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">-</span>
+              </div>
             </div>
-            <div style="display: flex; flex-direction: column;">
-              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Length</span>
-              <span id="stash-stat-length" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0m</span>
+            
+            <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 200px; max-width: 400px; justify-content: center; gap: 6px;">
+              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; text-align: right;">Stash Palette</span>
+              <div id="stash-stat-palette" class="stash-yarn-palette"></div>
             </div>
           </div>
           <div id="stash-grid" class="projects-grid stash-grid">
@@ -533,10 +544,13 @@
               <input type="text" id="stash-colorway" placeholder="e.g., Plomo" required autocomplete="off">
             </div>
             <div class="form-group half">
-              <label for="stash-colorhex">Color Swatch</label>
-              <div style="display: flex; gap: 8px;">
-                <input type="color" id="stash-colorhex" value="#8B8C89" style="height: 38px; width: 40px; padding: 0; border: none; cursor: pointer;">
-                <input type="text" id="stash-colorhex-text" value="#8B8C89" style="flex-grow: 1;" readonly>
+              <label for="stash-colorhex">Color Preview</label>
+              <div style="display: flex; gap: 8px; align-items: center; height: 38px;">
+                <input type="color" id="stash-colorhex" value="#8B8C89" style="height: 100%; width: 40px; padding: 0; border: none; cursor: pointer; flex-shrink: 0; border-radius: 4px;">
+                <input type="text" id="stash-colorhex-text" value="#8B8C89" style="width: 75px; flex-shrink: 0; height: 100%;" readonly>
+                <div style="flex-grow: 1; height: 100%; border-radius: 4px; overflow: hidden; display: flex; align-items: center; background-color: #faf8f5; background-image: url('data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.8\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100\' height=\'100\' filter=\'url(%23noise)\' opacity=\'0.05\'/%3E%3C/svg%3E'); box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                  <div id="stash-color-preview-thread" class="yarn-card-swatch" style="background-color: #8B8C89; width: 100%; border-bottom: none; -webkit-mask-size: cover; mask-size: cover;"></div>
+                </div>
               </div>
             </div>
           </div>
