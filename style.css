@@ -81,15 +81,15 @@
   --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Cozy Dark Mode Palette override */
+/* Cozy Dark Mode Palette override (Dark Glassmorphism) */
 body.dark-mode {
-  --color-bg: #15110f;
-  --color-surface: #1e1815;
-  --color-surface-translucent: rgba(30, 24, 21, 0.85);
-  --color-border: #2f2520;
-  --color-border-focus: #4e3f37;
-  --glass-blur: none;
-  --glass-shadow: none;
+  --color-bg: transparent;
+  --color-surface: rgba(20, 25, 20, 0.65);
+  --color-surface-translucent: rgba(20, 25, 20, 0.45);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border-focus: rgba(255, 255, 255, 0.3);
+  --glass-blur: blur(16px);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   
   --color-text-main: #f5ede4;
   --color-text-muted: #b4a296;
@@ -137,7 +137,7 @@ body {
 }
 
 body.dark-mode {
-  background-image: none;
+  background-image: url('assets/dark_knit_bg.jpg');
 }
 
 /* Custom Scrollbar */
