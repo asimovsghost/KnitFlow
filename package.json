@@ -40,7 +40,8 @@
       "main.js",
       "preload.js",
       "fonts/**/*",
-      "lib/**/*"
+      "lib/**/*",
+      "assets/**/*"
     ],
     "win": {
       "target": "nsis"
