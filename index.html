@@ -114,7 +114,7 @@
           <div class="stash-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h2>Your Yarn Stash</h2>
             <div style="display: flex; align-items: center; gap: 12px;">
-              <select id="stash-sort-select" style="padding: 6px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-secondary); color: var(--color-text); font-size: 0.9rem; cursor: pointer;">
+              <select id="stash-sort-select" style="padding: 6px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); backdrop-filter: var(--glass-blur); color: var(--color-text-main); font-size: 0.9rem; cursor: pointer;">
                 <option value="brand_asc">Brand (A-Z)</option>
                 <option value="brand_desc">Brand (Z-A)</option>
                 <option value="name_asc">Name (A-Z)</option>
@@ -129,24 +129,24 @@
               <button id="btn-add-stash" class="btn btn-primary">+ Add Yarn</button>
             </div>
           </div>
-          <div id="stash-stats-banner" class="hidden" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 30px; background: var(--color-bg-secondary); padding: 12px 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border);">
+          <div id="stash-stats-banner" class="hidden" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 30px; background: var(--color-surface); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); padding: 12px 20px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border);">
             <div style="display: flex; flex-wrap: wrap; gap: 30px;">
               <div style="display: flex; flex-direction: column;">
-                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Weight</span>
-                <span id="stash-stat-weight" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0g</span>
+                <span style="color: var(--color-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Weight</span>
+                <span id="stash-stat-weight" style="font-weight: 600; font-size: 1.1rem; color: var(--color-text-main);">0g</span>
               </div>
               <div style="display: flex; flex-direction: column;">
-                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Length</span>
-                <span id="stash-stat-length" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">0m</span>
+                <span style="color: var(--color-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Total Unallocated Length</span>
+                <span id="stash-stat-length" style="font-weight: 600; font-size: 1.1rem; color: var(--color-text-main);">0m</span>
               </div>
               <div style="display: flex; flex-direction: column;">
-                <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Top Brand (by Skeins)</span>
-                <span id="stash-stat-brand" style="font-weight: 600; font-size: 1.1rem; color: var(--color-primary);">-</span>
+                <span style="color: var(--color-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Top Brand (by Skeins)</span>
+                <span id="stash-stat-brand" style="font-weight: 600; font-size: 1.1rem; color: var(--color-text-main);">-</span>
               </div>
             </div>
             
             <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 200px; max-width: 400px; justify-content: center; gap: 6px;">
-              <span style="color: var(--color-text-light); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; text-align: right;">Stash Palette</span>
+              <span style="color: var(--color-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; text-align: right;">Stash Palette</span>
               <div id="stash-stat-palette" class="stash-yarn-palette"></div>
             </div>
           </div>
